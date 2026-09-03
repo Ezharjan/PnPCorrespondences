@@ -19,8 +19,9 @@ from scipy.spatial import cKDTree
 from .cameras import Intrinsics, project_points
 from .config import expand_conditions, load_config, scene_specs
 from .generate import generate_scene_record
+from .noise import num_outliers
 from .scenes import is_planar
-from .storage import load_manifest, load_stats, read_attrs
+from .storage import compute_dataset_stats, load_manifest, load_stats, read_attrs
 
 
 class Report:
@@ -109,7 +110,10 @@ def _validate_condition(rep: Report, cond_grp, attrs: Dict[str, Any], uv_clean: 
     otype = str(attrs["outlier_type"])
     rep.check("shapes", uv.shape == (m, 2) and mask.shape == (m,), f"{label}: condition array shapes")
     rep.check("shapes", np.isfinite(uv).all(), f"{label}: non-finite observations")
-    rep.check("outliers", int(mask.sum()) == int(attrs["num_outliers"]) == int(m * ratio), f"{label}: outlier count")
+    expected_outliers = num_outliers(m, ratio)
+    rep.check("outliers", int(mask.sum()) == int(attrs["num_outliers"]) == expected_outliers,
+              f"{label}: outlier count {int(mask.sum())} / attr {int(attrs['num_outliers'])} / "
+              f"expected {expected_outliers}")
     inl = ~mask
     residual = uv[inl] - uv_clean[inl]          # signed noise of the inlier observations
     dev = np.abs(residual)
@@ -162,7 +166,15 @@ def _validate_condition(rep: Report, cond_grp, attrs: Dict[str, Any], uv_clean: 
         rep.check("outliers", float(np.median(disp)) > 5.0 * scale,
                   f"{label}: median outlier displacement {np.median(disp):.2f} px is not clearly above the "
                   f"noise scale {scale:.2f} px")
-        if otype == "swap" and mask.sum() >= 2:
+        # `mixed` replaces the first half of the selected set uniformly and swaps
+        # the rest, so at least that many observations must still match a selected
+        # clean projection.  Which individual index was swapped is not recoverable
+        # from the stored mask, so the check is on the count.
+        n_sel = int(mask.sum())
+        n_swapped = n_sel if otype == "swap" else (n_sel - n_sel // 2 if otype == "mixed" else 0)
+        if n_swapped == 1:
+            n_swapped = 0          # a lone swap candidate is replaced instead (see noise.py)
+        if n_swapped >= 2:
             # Every swapped observation is another selected point's observation, so
             # it must lie within the noise of some selected clean point.  The bound
             # is on a 2-D distance, so it needs the norm of two noisy coordinates,
@@ -171,19 +183,20 @@ def _validate_condition(rep: Report, cond_grp, attrs: Dict[str, Any], uv_clean: 
             dist, nearest = cKDTree(uv_clean[sel]).query(uv[sel], k=1)
             tol_swap = math.sqrt(2.0) * max_deviation_sigmas(len(sel)) * sigma + (0.7072 if quant else 0.0) + 1e-6
             matched = dist <= tol_swap
-            rep.check("outliers", bool(matched.all()),
-                      f"{label}: {int((~matched).sum())} swapped observations match no selected clean point "
+            rep.check("outliers", int(matched.sum()) >= n_swapped,
+                      f"{label}: only {int(matched.sum())} of {len(sel)} outlier observations match a selected "
+                      f"clean point, expected at least {n_swapped} swapped "
                       f"(max distance {dist.max():.3f} px, tolerance {tol_swap:.3f} px)")
             # A derangement leaves no observation on its own 3D point, but two
             # distinct points whose projections are closer together than the noise
             # are genuinely indistinguishable, so a handful of nearest-neighbour
             # ties is expected.  Reverting the swap would make *every* observation
             # its own nearest neighbour, which this still catches decisively.
-            self_nearest = int((nearest == np.arange(len(sel))).sum())
+            self_nearest = int((nearest[matched] == np.flatnonzero(matched)).sum())
             allowed = max(3, int(0.02 * len(sel)))
             rep.check("outliers", self_nearest <= allowed,
-                      f"{label}: {self_nearest}/{len(sel)} swapped observations sit on their own 3D point "
-                      f"(at most {allowed} expected from projection ties)")
+                      f"{label}: {self_nearest}/{int(matched.sum())} matched outlier observations sit on their "
+                      f"own 3D point (at most {allowed} expected from projection ties)")
 
 
 def _validate_manifest_row(rep: Report, row, sattrs: Dict[str, Any], cattrs: Dict[str, Any],
@@ -247,7 +260,8 @@ def validate_dataset(data_dir: "str | Path", max_cameras: Optional[int] = None, 
     rep = Report()
     manifest = load_manifest(data_dir)
     stats = load_stats(data_dir)
-    csv_rows = sum(1 for _ in open(data_dir / "manifest.csv", "r", encoding="utf-8")) - 1
+    with open(data_dir / "manifest.csv", "r", encoding="utf-8") as fh:
+        csv_rows = sum(1 for _ in fh) - 1
     rep.check("manifest", len(manifest) == csv_rows == stats["num_samples"],
               f"manifest rows {len(manifest)} / csv {csv_rows} / stats {stats['num_samples']} disagree")
     rep.check("manifest", manifest["sample_id"].is_unique, "duplicate sample_id in manifest")
@@ -259,6 +273,14 @@ def validate_dataset(data_dir: "str | Path", max_cameras: Optional[int] = None, 
     rep.check("stats", int(stats["num_correspondences"]) == int(manifest["num_visible"].sum()),
               f"stats num_correspondences {stats['num_correspondences']} != {int(manifest['num_visible'].sum())}")
     rep.check("stats", int(stats["num_samples"]) == len(manifest), "stats num_samples != manifest rows")
+    # Every distribution in dataset_stats.json is recomputed from the manifest, not
+    # only the four scalar totals: the composition tables are what the dataset card
+    # and the README quote, so a stale one would be published unnoticed.
+    recomputed = compute_dataset_stats(manifest)
+    stale = sorted(k for k, v in recomputed.items() if k in stats and stats[k] != v)
+    rep.check("stats", not stale,
+              "dataset_stats.json disagrees with the manifest on " + ", ".join(
+                  f"{k}: stored {stats.get(k)!r} vs manifest {recomputed[k]!r}" for k in stale[:4]))
     for f in stats["files"]:
         rep.check("files", (data_dir / "hdf5" / f).exists(), f"missing file hdf5/{f}")
     cfg = load_config(data_dir / "metadata" / "config_used.yaml")
@@ -267,8 +289,7 @@ def validate_dataset(data_dir: "str | Path", max_cameras: Optional[int] = None, 
 
     # Index the manifest once.  Scanning all rows per camera is quadratic and
     # would dominate validation of a large tier (288 k rows x 19 k cameras).
-    indexed = manifest.copy()
-    indexed["_cam_path"] = indexed["h5_path"].str.rsplit("/", n=1).str[0]
+    indexed = manifest.assign(_cam_path=manifest["h5_path"].str.rsplit("/", n=1).str[0])
     rows_by_camera = {key: grp for key, grp in indexed.groupby(["file", "_cam_path"], sort=False)}
     cameras_per_scene = (manifest.drop_duplicates(["file", "scene_id", "camera_id"])
                          .groupby(["file", "scene_id"], sort=False).size().to_dict())
@@ -284,13 +305,26 @@ def validate_dataset(data_dir: "str | Path", max_cameras: Optional[int] = None, 
             iterator = tqdm(list(iterator), desc="validating cameras", unit="camera", dynamic_ncols=True)
         except ImportError:  # pragma: no cover
             pass
-    open_files: Dict[str, h5py.File] = {}
+    # One HDF5 file open at a time, reopened every REOPEN_EVERY cameras.  HDF5 keeps
+    # a per-file metadata cache for every object touched; over the ~288 000 groups of
+    # a large tier that cache reaches several gigabytes and the process is killed.
+    # Cameras are iterated in (file, path) order, so closing the previous file costs
+    # nothing and bounds the resident set to one shard's worth of cache.
+    REOPEN_EVERY = 2000
+    current_name: Optional[str] = None
+    current: Optional[h5py.File] = None
+    since_open = 0
     checked_scenes = set()
     try:
         for _, row in iterator:
-            f = open_files.get(row["file"])
-            if f is None:
-                f = open_files[row["file"]] = h5py.File(data_dir / row["file"], "r")
+            if current is None or row["file"] != current_name or since_open >= REOPEN_EVERY:
+                if current is not None:
+                    current.close()
+                current_name = row["file"]
+                current = h5py.File(data_dir / current_name, "r")
+                since_open = 0
+            since_open += 1
+            f = current
             cond_grp = f[row["h5_path"]]
             cam_grp = cond_grp.parent
             scene_grp = cam_grp.parent
@@ -307,8 +341,18 @@ def validate_dataset(data_dir: "str | Path", max_cameras: Optional[int] = None, 
                 if st == "planar_single":
                     rep.check("scene", is_planar(pts) and (labels == 0).all(), f"{label}: planar_single is not planar")
                 elif st in ("planar_multi", "mixed"):
-                    for k in range(int(sattrs["num_planes"])):
-                        rep.check("scene", is_planar(pts[labels == k]), f"{label}: plane {k} of {st} is not planar")
+                    n_planes = int(sattrs["num_planes"])
+                    # `is_planar` is vacuously true for fewer than four points, so the
+                    # per-plane check is only meaningful once the plane is known to be
+                    # populated; without the size test an all -1 label array would pass.
+                    for k in range(n_planes):
+                        plane = pts[labels == k]
+                        rep.check("scene", len(plane) >= 4 and is_planar(plane),
+                                  f"{label}: plane {k} of {st} has {len(plane)} points or is not planar")
+                    allowed = set(range(n_planes)) | ({-1} if st == "mixed" else set())
+                    rep.check("scene", set(np.unique(labels).tolist()) == allowed,
+                              f"{label}: {st} point_labels are {sorted(set(np.unique(labels).tolist()))}, "
+                              f"expected {sorted(allowed)}")
                     rep.check("scene", not is_planar(pts), f"{label}: {st} scene is degenerate (planar)")
                 else:
                     rep.check("scene", not is_planar(pts) and (labels == -1).all(), f"{label}: {st} labels/planarity")
@@ -342,8 +386,8 @@ def validate_dataset(data_dir: "str | Path", max_cameras: Optional[int] = None, 
                 _validate_manifest_row(rep, mrow, scene_attrs_cached, cattrs, cond_attrs[cname],
                                        K_cam, coeffs_cam, depths, len(pts), f"{label}/{cname}")
     finally:
-        for f in open_files.values():
-            f.close()
+        if current is not None:
+            current.close()
 
     # Reproducibility: regenerate a few scenes and compare bit-for-bit.
     if regenerate > 0:

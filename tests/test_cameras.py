@@ -219,3 +219,46 @@ def test_sample_intrinsics_consistency():
         if intr.fov_class == "narrow" and intr.model != PINHOLE:
             assert intr.distortion_level == "mild"
     assert seen == {PINHOLE, BROWN_CONRADY, KANNALA_BRANDT}
+
+
+def test_projection_matches_opencv_over_sampled_cameras():
+    """The agreement with OpenCV holds for the whole sampled camera population,
+    not only for one hand-picked set of coefficients, on the points a dataset
+    actually stores (in front of the camera, inside the domain, on the sensor)."""
+    rng = np.random.default_rng(11)
+    worst = {}
+    total = 0
+    for _ in range(400):
+        intr = sample_intrinsics(rng, DEFAULTS["cameras"])
+        if intr.skew != 0.0:
+            continue  # cv2.projectPoints ignores K[0, 1]; only skew-free cameras compare
+        pts = rng.uniform(-2.5, 2.5, (500, 3))
+        pts[:, 2] += 5.0
+        proj = project_points(pts, intr, np.eye(3), np.zeros(3))
+        if len(proj.indices) < 5:
+            continue
+        seen = pts[proj.indices]
+        total += len(seen)
+        rvec, _ = cv2.Rodrigues(np.eye(3))
+        if intr.model == KANNALA_BRANDT:
+            ref, _ = cv2.fisheye.projectPoints(seen.reshape(1, -1, 3), rvec, np.zeros(3), intr.K, intr.coeffs)
+        else:
+            ref, _ = cv2.projectPoints(seen, rvec, np.zeros(3), intr.K, intr.coeffs)
+        gap = float(np.abs(proj.uv - ref.reshape(-1, 2)).max())
+        worst[intr.model] = max(worst.get(intr.model, 0.0), gap)
+    assert set(worst) == {PINHOLE, BROWN_CONRADY, KANNALA_BRANDT}
+    assert total > 100_000
+    assert max(worst.values()) < 1e-11, worst
+
+
+def test_choice_is_independent_of_the_key_order():
+    """Two configurations with identical probabilities must give identical draws,
+    whatever order the YAML file happened to list the models in."""
+    from pnpcorr.cameras import _choice
+
+    probs = {"pinhole": 0.3, "brown_conrady": 0.45, "kannala_brandt": 0.25}
+    forward = [_choice(np.random.default_rng(i), probs) for i in range(200)]
+    reversed_order = [_choice(np.random.default_rng(i), dict(reversed(list(probs.items()))))
+                      for i in range(200)]
+    assert forward == reversed_order
+    assert set(forward) == set(probs)

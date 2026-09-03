@@ -1,5 +1,6 @@
-# Extra-large tier: 1,000 scenes x 80 views x 15 conditions = 1.2 million samples,
-# ~25 GB of HDF5.  Expect several hours of generation; use --workers.
+# Extra-large tier: 1,000 scenes x 80 views x 15 conditions, about 1.2 million
+# samples and ~28 GB of HDF5, extrapolated from the measured full tier.  Expect
+# roughly 45 minutes of generation on two cores, proportionally less with more.
 dataset:
   name: PnPCorrespondencesXL
   version: "1.0.0"

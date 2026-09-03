@@ -42,13 +42,18 @@ def _fmt(value: Any) -> str:
     return str(value)
 
 
+def _escape_cell(text: str) -> str:
+    """A bare '|' would end the cell, so every table value escapes it."""
+    return text.replace("|", "\\|")
+
+
 def df_to_markdown(df: pd.DataFrame, index: bool = True) -> str:
     """Minimal GitHub-flavoured Markdown table renderer (no extra dependency)."""
     frame = df.reset_index() if index else df
-    cols = [str(c) for c in frame.columns]
+    cols = [_escape_cell(str(c)) for c in frame.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join(["---"] * len(cols)) + "|"]
     for _, row in frame.iterrows():
-        lines.append("| " + " | ".join(_fmt(v) for v in row.values) + " |")
+        lines.append("| " + " | ".join(_escape_cell(_fmt(v)) for v in row.values) + " |")
     return "\n".join(lines) + "\n"
 
 
@@ -74,13 +79,24 @@ def _solver_order(df: pd.DataFrame) -> List[str]:
 
 
 def solver_overview(df: pd.DataFrame) -> pd.DataFrame:
-    """One row per solver with the headline numbers."""
+    """
+    One row per solver with the headline numbers.
+
+    Every solver is offered every sample, so `solves` is the same for all of them
+    and the columns are directly comparable.  A solver restricted to part of the
+    input space - IPPE to coplanar scenes, the DLT away from them - declines the
+    rest, which shows up as a lower `returned (%)`; `success when returned (%)`
+    then says how often it was right when it did answer.
+    """
     g = df.groupby("solver", sort=False)
+    returned = g["ok"].sum()
+    success = g["success"].sum()
     out = pd.DataFrame({
         "family": g["family"].first(),
         "solves": g.size(),
         "returned (%)": g["ok"].mean() * 100.0,
         "success (%)": g["success"].mean() * 100.0,
+        "success when returned (%)": (success / returned.where(returned > 0)) * 100.0,
         "rot err median (deg)": g["rot_err_deg"].median(),
         "rot err mean (deg)": g["rot_err_deg"].mean(),
         "trans err rel median": g["trans_err_rel"].median(),

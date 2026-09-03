@@ -24,9 +24,24 @@ Gaussian noise statistics are exact even at the image border.
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, Tuple
 
 import numpy as np
+
+
+def num_outliers(num_points: int, ratio: float) -> int:
+    """
+    ``floor(num_points * ratio)``, computed so that the result is the floor of the
+    *exact* product rather than of its floating-point approximation.
+
+    ``90 * 0.7`` evaluates to 62.99999999999999 in binary floating point, whose
+    floor is 62 where the exact product is 63.  The generator and the validator
+    both call this function, so the stored ``num_outliers`` attribute, the manifest
+    column and the validator's expectation can never disagree.
+    """
+    m = int(num_points)
+    return int(math.floor(m * float(ratio) + 1e-9))
 
 
 def condition_name(cond: Dict[str, Any]) -> str:
@@ -57,7 +72,7 @@ def apply_condition(rng: np.random.Generator, uv_clean: np.ndarray, cond: Dict[s
         uv += rng.normal(0.0, sigma, uv.shape)
 
     outlier_mask = np.zeros(m, dtype=bool)
-    n_out = int(m * ratio)
+    n_out = num_outliers(m, ratio)
     if n_out > 0:
         sel = rng.choice(m, n_out, replace=False)
         outlier_mask[sel] = True

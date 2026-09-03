@@ -1,7 +1,8 @@
-# Full tier: the large systematic dataset.
-# 400 scenes x 48 views x 15 noise conditions = 288,000 samples,
-# roughly 30 million 2D-3D correspondences per condition and ~6 GB of HDF5.
-# Generation takes on the order of 30-45 minutes on a laptop with 4-6 workers.
+# Full tier: the large systematic dataset, and the one that is released.
+# 400 scenes x 48 views x 15 noise conditions; seven views fail the visibility test
+# and are skipped, so the result is 19,193 views and 287,895 samples - 328 million
+# 2D-3D correspondences, 21.9 million per condition, in 6.6 GB of HDF5.
+# Generation took 10 minutes with two workers on two cores and scales with cores.
 dataset:
   name: PnPCorrespondences
   version: "1.0.0"

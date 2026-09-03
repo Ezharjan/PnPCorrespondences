@@ -7,8 +7,10 @@ special structure:
 
 * ``planar_single``    - all points on one plane (calibration target / wall).
                          Exactly planar: the classic DLT degeneracy.
-* ``planar_multi``     - 2 to 4 orthogonal planes of a room (back wall, floor,
-                         ceiling, side walls) meeting at right angles.
+* ``planar_multi``     - 2 to 4 axis-aligned faces of a room, always the back
+                         wall plus a random selection of floor, ceiling and side
+                         walls (adjacent faces meet at right angles; opposite
+                         faces, such as floor and ceiling, are parallel).
 * ``volumetric``       - points uniformly distributed inside a box.
 * ``mixed``            - half of the points on a back wall, half inside the box in
                          front of it (the layout of the reference implementation).
@@ -93,7 +95,9 @@ def _plane_points(rng, n, size_a, size_b, layout, jitter, origin, axis_a, axis_b
 
 
 def _choice(rng: np.random.Generator, probs: Dict[str, float]) -> str:
-    keys = list(probs.keys())
+    """Draw one key of ``probs``; keys are sorted so the draw depends on the
+    content of the mapping rather than on the order a YAML file lists it in."""
+    keys = sorted(probs.keys())
     p = np.asarray([float(probs[k]) for k in keys])
     return str(keys[int(rng.choice(len(keys), p=p / p.sum()))])
 

@@ -82,7 +82,7 @@ intrinsics, lens distortion and extrinsics that produced them.
 
 Because there are no images, every source of error is controlled explicitly: Gaussian
 sub-pixel jitter, pixel quantization, outlier ratio (0 % to 95 %), outlier type
-(uniform replacements or swapped assignments), lens model (pinhole, Brown-Conrady,
+(uniform replacement, swapped assignments or a mixture), lens model (pinhole, Brown-Conrady,
 Kannala-Brandt fisheye), field of view (5 deg telephoto to 175 deg fisheye) and scene
 structure (planar targets, room corners, volumes, mixed, depth-stratified corridors).
 
@@ -115,7 +115,9 @@ Condition names read `s<sigma>_q<quantized>_o<outlier ratio>_<outlier type>`.
   parameters, number of visible points, ...) and the HDF5 location of the arrays.
 - `metadata/dataset_stats.json`, `metadata/config_used.yaml` - statistics and the exact
   generator configuration.
-- `examples/*.json` - small human-readable samples.
+- `examples/*.json` - small human-readable samples, one per (scene type, camera model),
+  in strict RFC 8259 JSON (non-finite values are written as `null`, never as bare
+  `NaN`/`Infinity` literals).
 - HDF5 shards (one per scene type and part):
 {files}
 
@@ -163,8 +165,8 @@ The dataset was produced by the `pnpcorr` generator{code_sentence} The exact
 configuration is stored in `metadata/config_used.yaml`, and every array is a
 deterministic function of the master seed (`{stats['master_seed']}`), so the dataset can
 be regenerated bit-for-bit. Camera model conventions follow OpenCV
-(`cv2.projectPoints` / `cv2.fisheye.projectPoints`); projections agree with those
-functions to 1e-8 px.
+(`cv2.projectPoints` / `cv2.fisheye.projectPoints`); across the whole sampled camera
+population the projections agree with those functions to better than 1e-11 px.
 
 Notes on the design, relevant when interpreting the data:
 

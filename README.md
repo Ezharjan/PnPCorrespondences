@@ -61,7 +61,7 @@ Evaluating those methods on real images confounds many error sources at once: li
 
 The generator is deterministic: every array is a pure function of a master seed, so the full dataset can be regenerated bit-for-bit on any machine (the validator checks this).
 
-Because no raster data is involved, the dataset is also cheap: there are no images to decode, storage is roughly 19 bytes per correspondence, and a 300-million-correspondence release fits in about 6 GB. What it buys is absolute ground truth for probing the limits of calibration and pose-estimation algorithms, at the price of not modelling image formation itself (Section 17).
+Because no raster data is involved, the dataset is also cheap: there are no images to decode, storage is about 20 bytes per correspondence, and the 328-million-correspondence `full` tier fits in 6.6 GB. What it buys is absolute ground truth for probing the limits of calibration and pose-estimation algorithms, at the price of not modelling image formation itself (Section 17).
 
 ## 2. Repository layout
 
@@ -73,10 +73,11 @@ PnPCorrespondences/
 ├── requirements.txt            pip requirements (pip install -r requirements.txt)
 ├── pyproject.toml              optional: pip install -e .  (package name: pnpcorr)
 ├── configs/                    size tiers and variants of the generator configuration
-│   ├── smoke.yaml              5 scenes, 60 samples, seconds        (installation check)
-│   ├── small.yaml              30 scenes, 5 400 samples, ~150 MB    (development)
-│   ├── full.yaml               400 scenes, 288 000 samples, ~6 GB   (the dataset)
-│   ├── xl.yaml                 1 000 scenes, 1.2 M samples, ~25 GB
+│   ├── smoke.yaml              5 scenes, 60 samples, under a second (installation check)
+│   ├── small.yaml              30 scenes, 5 400 samples, 146 MB     (development, and the
+│   │                           tier the documented benchmark uses)
+│   ├── full.yaml               400 scenes, 287 895 samples, 6.6 GB  (the release)
+│   ├── xl.yaml                 1 000 scenes, ~1.2 M samples, ~28 GB
 │   └── factorial.yaml          full factorial design of the noise factors (42 conditions)
 ├── pnpcorr/                    the library (pure Python, NumPy/SciPy; OpenCV optional)
 │   ├── config.py               defaults, YAML loading, validation, scene/split enumeration
@@ -105,11 +106,20 @@ PnPCorrespondences/
 │   ├── run_pipeline.py         everything above, in order
 │   └── clean_caches.py         delete every cache in one command (never the data)
 ├── tests/                      pytest suite (projection is checked against OpenCV)
-├── examples/quickstart.py      load one sample and solve it with several solvers
+├── examples/                   nine runnable, self-contained examples; see examples/README.md
+│   ├── quickstart.py           load one sample and solve it with several solvers
+│   ├── 01_read_with_h5py_only.py        read the data with h5py and pandas alone
+│   ├── 02_camera_models_and_distortion.py  the three lens models, forward and inverse
+│   ├── 03_noise_conditions.py           every condition of one view, against the noise model
+│   ├── 04_compare_solvers.py            a miniature benchmark in one table
+│   ├── 05_robustness_to_outliers.py     breakdown point of the robust estimators
+│   ├── 06_multiview_calibration.py      intrinsics and distortion from a rig of views
+│   ├── 07_training_dataloader.py        fixed-size batches for a learned solver
+│   └── 08_custom_tier.py                design, generate and validate your own tier
 └── docs/                       version-controlled documentation (committed, not ignored)
     ├── figures/                the 13 figures the README embeds and links (Section 10);
     │                           `make_figures.py` writes here, replacing them in place
-    └── small_tier_summary.md   the full benchmark summary quoted in Section 9.6
+    └── small_tier_summary.md   the benchmark summary of Section 9.6, written by run_pipeline.py
 ```
 
 Generated artefacts (`data/`, `results/`, `runs/`, and a root-level `figures/` if you ask for one) are written next to the code and are not tracked by git. Caches are untracked too and are removed by `python scripts/clean_caches.py` (Section 12). No script deletes a dataset or anything under `docs/`.
@@ -126,11 +136,13 @@ python scripts/run_pipeline.py --config configs/smoke.yaml --out-root runs/smoke
 python examples/quickstart.py --data runs/smoke/data
 ```
 
-The smoke pipeline generates a tiny dataset, validates it, exports JSON examples, runs every benchmark, writes the summary tables and figures and the dataset card, all in about one minute. The full dataset is produced by the same command with `configs/full.yaml` (Section 8). Afterwards, `python scripts/clean_caches.py` removes every cache the run left behind and touches nothing else (Section 12).
+The smoke pipeline generates a tiny dataset, validates it, exports JSON examples, runs every benchmark, writes the summary tables and figures and the dataset card, all in about two minutes. The full dataset is produced by the same command with `configs/full.yaml` (Section 8). Afterwards, `python scripts/clean_caches.py` removes every cache the run left behind and touches nothing else (Section 12).
+
+[`examples/`](examples/) holds nine self-contained scripts and is the shortest way into the material: reading the format with h5py alone, the three camera models, the noise design of a single view, a miniature solver benchmark, the outlier breakdown point, multi-view calibration, batching for a learned solver, and building a tier of your own. [`examples/README.md`](examples/README.md) indexes them.
 
 ## 4. Installation
 
-Requirements: Python 3.9 or newer (3.10–3.12 recommended), about 8 GB of free disk for the `full` tier (25 GB for `xl`), and any operating system. The scripts are pure Python and were tested on Linux; they use `pathlib` and `multiprocessing` with the `spawn` start method, so they run unchanged on Windows.
+Requirements: Python 3.9 or newer (3.10–3.13 recommended), about 8 GB of free disk for the `full` tier (30 GB for `xl`), and any operating system. The scripts are pure Python and were tested on Linux; they use `pathlib` and `multiprocessing` with the `spawn` start method, so they run unchanged on Windows.
 
 **Windows (PowerShell)**
 
@@ -158,13 +170,13 @@ pip install -r requirements.txt
 python -m pytest -q
 ```
 
-`requirements.txt` installs NumPy, SciPy, h5py, pandas + pyarrow (Parquet manifest), PyYAML, tqdm, OpenCV (`opencv-python`, solvers), matplotlib (figures), `huggingface_hub` (upload) and pytest. Both OpenCV 4.x and 5.x work. The fisheye calibration flags moved from `cv2.fisheye` to the top-level namespace in 5.0, and the code accepts either spelling; the test suite is run against both. OpenCV is optional for *generation*: the generator, the validator and the from-scratch solvers only need NumPy/SciPy. Optionally install the library in editable mode with `pip install -e .`; the scripts also work without installation because they add the repository root to `sys.path`. (If you already have the sources in another folder, skip the `git clone` line and `cd` there instead.)
+`requirements.txt` installs NumPy, SciPy, h5py, pandas + pyarrow (Parquet manifest), PyYAML, tqdm, OpenCV (`opencv-python`, solvers), matplotlib (figures), `huggingface_hub` (upload) and pytest. Both OpenCV 4.x and 5.x work: the fisheye calibration flags moved from `cv2.fisheye` to the top-level namespace in 5.0, and `pnpcorr.solvers._fisheye_flag` resolves either spelling, which `tests/test_solvers.py` asserts. OpenCV is optional for *generation*: the generator, the validator and the from-scratch solvers only need NumPy/SciPy. Optionally install the library in editable mode with `pip install -e .`; the scripts also work without installation because they add the repository root to `sys.path`. (If you already have the sources in another folder, skip the `git clone` line and `cd` there instead.)
 
 ## 5. Method and dataset design
 
 This section is the complete methodology. Generating synthetic correspondences means simulating the *forward* projection model of a camera rigorously, mapping a 3D point in the world to a 2D pixel, and then perturbing the result in controlled, labelled ways. Section 5.1 states the projection model; Sections 5.2 to 5.6 are the four generation steps in order (scene geometry → poses → projection and filtering → noise); Section 5.7 covers determinism, 5.8 the deliberately hard configurations and 5.9 a minimal reference implementation.
 
-All quantities are in metres and pixels. Conventions are those of OpenCV; the projection code is verified against `cv2.projectPoints` and `cv2.fisheye.projectPoints` to 10⁻⁸ px in the test suite.
+All quantities are in metres and pixels. Conventions are those of OpenCV; the test suite verifies the projection code against `cv2.projectPoints` and `cv2.fisheye.projectPoints` over the whole sampled camera population — every model, every FOV class, every distortion level — and requires agreement better than 10⁻¹¹ px on the points a dataset stores; the measured maximum is 9.1 × 10⁻¹³ px over 1.2 × 10⁵ correspondences.
 
 ### 5.1 The projection model
 
@@ -210,7 +222,7 @@ Five scene families are generated in a canonical frame and then moved by a rando
 | `scene_type` | Structure | Purpose |
 |---|---|---|
 | `planar_single` | all points on one plane | the classic DLT degeneracy; IPPE's domain |
-| `planar_multi` | 2–4 orthogonal faces of a room (always the back wall, plus floor / ceiling / side walls) | multi-plane structure, room corners |
+| `planar_multi` | 2–4 axis-aligned faces of a room: always the back wall, plus a random selection of floor / ceiling / side walls (adjacent faces meet at right angles, opposite ones are parallel) | multi-plane structure, room corners |
 | `volumetric` | uniform points inside a box | generic well-conditioned PnP |
 | `mixed` | half the points on the back wall, half inside the box (the layout of the reference implementation, Section 5.9) | mixed planar / volumetric |
 | `depth_stratified` | points in two nested cones along a corridor, depth log-uniform in [0.5 m, 50 m] | depth-dependent effects, near/far points in one view |
@@ -266,7 +278,7 @@ A benchmark is only as informative as its hard cases. Three are built into the d
 | Challenge | Why it matters | How the dataset realises it |
 |---|---|---|
 | **Planar degeneracies** | With all 3D points on one plane the standard DLT is degenerate and fails without an explicit homography treatment. | The `planar_single` family is *exactly* coplanar (to floating-point rounding), and `planar_multi` / `mixed` contain exactly-planar subsets labelled by `point_labels`. The solvers report `degenerate: coplanar points` instead of returning a silently wrong pose. |
-| **Small field of view** | Telephoto lenses show almost no perspective effect, which stresses the numerical stability of every solver and makes the principal point nearly unobservable for calibration. | The `narrow` FOV class spans 5–20° HFOV and is sampled for pinhole and Brown–Conrady cameras; Section 9.6 quantifies the resulting 50–85 px principal-point error in multi-view calibration. |
+| **Small field of view** | Telephoto lenses show almost no perspective effect, which stresses the numerical stability of every solver and makes the principal point nearly unobservable for calibration. | The `narrow` FOV class spans 5–20° HFOV and is sampled for pinhole and Brown–Conrady cameras; Section 9.6 quantifies the resulting 13–23 px principal-point error in multi-view calibration. |
 | **Extreme outlier ratios** | Modern learned PnP solvers (for example graph-neural-network matchers) claim robustness to 80–90 % outliers, which is beyond what a 20 % benchmark can distinguish. | Outlier ratios span 0 %, 5 %, 20 %, 50 %, 80 % and 95 %, in three contamination modes, with the ground-truth `outlier_mask` stored for every sample so that inlier precision and recall are measurable, not just pose error. |
 
 The corresponding evaluation metrics are defined in Section 9.3 and computed by `pnpcorr.metrics`: reprojection RMSE against the clean ground truth, rotation and translation error against the exact pose, and percentage error of $f_x, f_y, c_x, c_y$.
@@ -456,16 +468,18 @@ print(pose_metrics(est.R, est.t, s.R, s.t, depth_scale=s.depths.mean()))
 
 ## 7. Size tiers
 
-Measured on the `small` tier (2 worker processes) and extrapolated linearly; times are for generation only, on a laptop-class CPU.
+`smoke`, `small` and `full` are measured on a two-core cloud VM; `xl` is extrapolated from `full`. Times are for generation only, at the stated number of worker processes, and scale roughly with the number of cores.
 
 | tier | scenes | views | samples | correspondences (Σ M over samples) | HDF5 size | generation time |
 |---|---|---|---|---|---|---|
-| `smoke` | 5 | 15 | 60 | ≈ 2 × 10⁴ | 1 MB | 2 s |
-| `small` | 30 | 360 | 5 400 | 7.7 × 10⁶ | 144 MB | 20 s |
-| `full` | 400 | 19 200 | 288 000 | ≈ 3 × 10⁸ | ≈ 6 GB | ≈ 15–30 min |
-| `xl` | 1 000 | 80 000 | 1 200 000 | ≈ 1.3 × 10⁹ | ≈ 25 GB | ≈ 1–2 h |
+| `smoke` | 5 | 15 | 60 | 1.8 × 10⁴ | 0.96 MB | < 1 s (1 worker) |
+| `small` | 30 | 360 | 5 400 | 7.79 × 10⁶ | 146 MB | 14 s (2 workers) |
+| `full` | 400 | 19 193 | 287 895 | 3.28 × 10⁸ | 6.60 GB | 10 min (2 workers) |
+| `xl` | 1 000 | ≈ 80 000 | ≈ 1.2 × 10⁶ | ≈ 1.4 × 10⁹ | ≈ 28 GB | ≈ 45 min (2 workers) |
 
-A sample costs about 19 bytes per correspondence with the default gzip level 1. Float64 coordinates barely compress, so `dataset.compression: none` trades ~12 % more space for ~30 % less generation wall time (measured on 3.9 M correspondences: 5.5 s / 73 MB with gzip, 3.8 s / 82 MB without). Scaling knobs: `scenes.counts`, `cameras.num_intrinsics_per_scene`, `cameras.num_poses_per_intrinsics`, `scenes.num_points` and the number of conditions (Section 14).
+The `full` tier lands seven views short of 400 × 48 because seven poses failed the visibility test thirty times in a row and were skipped; the count is reported as `num_cameras_skipped` in `dataset_stats.json`, and since generation is deterministic the same seven are skipped on every machine.
+
+A correspondence costs about 20 bytes with the default gzip level 1, and the `full` tier's twenty shards run 252–387 MB. Float64 coordinates barely compress, so `dataset.compression: none` trades 12 % more space for 30 % less generation time (`small` tier, two workers: 13.9 s / 146 MB with gzip level 1, 9.7 s / 164 MB without). At most `2 × --workers` scene records are held in memory at once, so peak resident memory stays under 1 GB whatever the tier. Scaling knobs: `scenes.counts`, `cameras.num_intrinsics_per_scene`, `cameras.num_poses_per_intrinsics`, `scenes.num_points` and the number of conditions (Section 14).
 
 ## 8. Step by step: generating the dataset
 
@@ -488,16 +502,16 @@ python scripts/generate_dataset.py --config configs/full.yaml --out data --worke
 * `--workers N` — scene generation runs in N processes (use the number of physical cores; writing is done by the main process). Generation with any number of workers gives identical files.
 * `--seed S` — override `dataset.master_seed` to create an *independent* dataset with the same design.
 * The output directory is created. If it already contains a dataset the script stops; pass `--overwrite` to replace it.
-* Progress is shown per scene. Expect 15–30 minutes and about 6 GB for `configs/full.yaml`; `configs/xl.yaml` takes 1–2 hours and 25 GB.
+* Progress is shown per scene. `configs/full.yaml` took 10 minutes and 6.6 GB with two workers on a two-core machine; `configs/xl.yaml` is about four and a half times that.
 
 ### 8.3 Validate
 
 ```bash
-python scripts/validate_dataset.py --data data                      # every camera: ~20 s for `small`, ~15-20 min for `full`
+python scripts/validate_dataset.py --data data                      # every camera
 python scripts/validate_dataset.py --data data --max-cameras 2000 --regenerate 5   # a fast spot check
 ```
 
-The validator re-projects the stored ground truth for every camera and compares it with `points_2d_clean`, `point_indices` and `depths` (10⁻⁹ px), verifies rotations, camera centres, `K` structure and the FOV/focal relation, checks bounds and depths, counts outliers, bounds the largest inlier deviation with a sample-size-aware Gaussian tail bound (`√(2 ln(N/10⁻⁹))` σ, since the largest of N normal deviates grows with N) and tests the inlier noise RMS against σ within eight standard errors, checks quantization (including the σ > 0 case, where the expected residual RMS is $\sqrt{\sigma^2 + 1/12}$), checks that the inlier noise is zero-mean, that outliers are displaced far beyond the noise scale, that every swapped observation matches some selected point's clean projection and that uniform outliers lie inside the image, checks planarity labels and that pinhole cameras carry zero distortion coefficients, re-derives **every** manifest column from the HDF5 groups and compares it, cross-checks `dataset_stats.json` against the manifest, and regenerates `--regenerate` random scenes to compare them bit-for-bit. A `small`-tier dataset runs about 234 000 checks. It writes `data/metadata/validation_report.json` and exits with status 1 on any failure.
+The validator re-projects the stored ground truth for every camera and compares it with `points_2d_clean`, `point_indices` and `depths` (10⁻⁹ px), verifies rotations, camera centres, `K` structure and the FOV/focal relation, checks bounds and depths, counts outliers, bounds the largest inlier deviation with a sample-size-aware Gaussian tail bound (`√(2 ln(N/10⁻⁹))` σ, since the largest of N normal deviates grows with N) and tests the inlier noise RMS against σ within eight standard errors, checks quantization (including the σ > 0 case, where the expected residual RMS is $\sqrt{\sigma^2 + 1/12}$), checks that the inlier noise is zero-mean, that outliers are displaced far beyond the noise scale, that every swapped observation matches some selected point's clean projection and that uniform outliers lie inside the image, checks planarity labels and that pinhole cameras carry zero distortion coefficients, re-derives **every** manifest column from the HDF5 groups and compares it, cross-checks `dataset_stats.json` against the manifest, and regenerates `--regenerate` random scenes to compare them bit-for-bit. A `small`-tier dataset runs 56 399 checks in 15 s; the `full` tier runs 2 999 639 checks in 14 minutes, on two cores. It writes `data/metadata/validation_report.json` and exits with status 1 on any failure. One shard is open at a time, so the resident set stays near 1 GB whatever the tier.
 
 ### 8.4 Export human-readable examples
 
@@ -508,6 +522,8 @@ python scripts/export_examples.py --data data            # -> data/examples/*.js
 ### 8.5 Custom designs
 
 Copy a configuration and edit it. The YAML files override the documented defaults in `pnpcorr/config.py` (Section 14). Examples: a pinhole-only dataset (`cameras.model_probs: {pinhole: 1.0}`), only planar targets (`scenes.counts` with a single entry), a 42-condition factorial design (`configs/factorial.yaml`), integer-only sensors (`quantize: true` everywhere), or 95 % outliers at every noise level.
+
+Restricting a set of alternatives works as written: a mapping whose keys are competing options — `dataset.splits`, `scenes.counts`, `scenes.planar_layout_probs`, `cameras.model_probs`, `cameras.fov_class_probs`, `cameras.distortion_levels.probs` and `conditions.items` — replaces the default outright, so `{pinhole: 1.0}` really does mean pinhole only. Lookup tables keyed by name, such as `cameras.fov_classes` and the per-model distortion ranges, are merged instead, so a single class can be retuned without restating the others. `metadata/config_used.yaml` therefore reloads to exactly the configuration that produced the dataset, which is what makes the reproducibility check meaningful. `python examples/08_custom_tier.py --help` does the same thing from Python.
 
 ## 9. Benchmarks, evaluation and analysis
 
@@ -543,7 +559,7 @@ Copy a configuration and edit it. The YAML files override the documented default
 | multi-view `opencv` | OpenCV | `calibrateCamera` (Brown–Conrady) / `fisheye.calibrate` (Kannala–Brandt) | ≥ 3 views | — | Zhang 2000; OpenCV |
 | multi-view `ba_scratch` | from scratch | sparse bundle adjustment of intrinsics, distortion and all poses with SciPy `least_squares` | ≥ 3 views | — | Triggs et al. 1999 |
 
-Solvers that require OpenCV are skipped automatically when it is not installed (`python scripts/run_benchmark.py --list-solvers`), and a solver that raises is recorded as a failure with its exception in `failure_reason` instead of aborting the benchmark. `SOLVEPNP_DLS` and `SOLVEPNP_UPNP` are excluded on purpose: current OpenCV silently falls back to EPnP for both. The RANSAC inlier threshold follows the noise level, `max(2 px, 3σ)` plus 0.5 px for quantized conditions (`--threshold auto`), or a fixed value (`--threshold 4`).
+Solvers that require OpenCV are skipped automatically when it is not installed (`python scripts/run_benchmark.py --list-solvers`), and a solver that raises is recorded as a failure with its exception in `failure_reason` instead of aborting the benchmark. Every remaining solver is offered every sample, including the ones outside its domain: `ippe` declines a non-coplanar subset and the DLT variants decline a coplanar one, each with its reason, rather than being silently skipped. The `returned (%)` and `success (%)` columns therefore share one denominator across the whole table, and `pnp_failure_reasons` says exactly what each solver refused and why. Only the minimal solvers are treated differently: `p3p` and `ap3p` are defined at exactly four correspondences, so they appear in the number-of-points sweep and not in the all-points tables. `SOLVEPNP_DLS` and `SOLVEPNP_UPNP` are excluded on purpose: current OpenCV silently falls back to EPnP for both. The RANSAC inlier threshold follows the noise level, `max(2 px, 3σ)` plus 0.5 px for quantized conditions (`--threshold auto`), or a fixed value (`--threshold 4`).
 
 ### 9.3 Metrics
 
@@ -562,7 +578,7 @@ Three families of error are required to characterise a calibration or pose metho
 | `ok`, `failure_reason` | whether the solver returned an estimate (degenerate configurations are recorded, e.g. `degenerate: coplanar points` for the DLT on planar scenes) |
 | `success` | `rot_err_deg ≤ 5` and `trans_err_rel ≤ 0.05` (PnP); focal error ≤ 5 % and rotation ≤ 5° (single-view calibration); focal error ≤ 1 % and rotation ≤ 1° (multi-view) |
 
-Each row also carries every factor of the sample (the manifest columns of Section 6.3) and the bookkeeping of the solve: `num_points_setting` / `num_points_used` (the subset size), `num_outliers_used` and `effective_outlier_ratio` (of the subset), `subset_planar`, `ransac_threshold`, `num_noninvertible` (observations whose distortion could not be inverted, see Section 17), `num_inliers_est`, `family` and `robust`.
+Each row also carries the sample's identifying and experimental factors — 24 of the manifest's 38 columns, listed as `SAMPLE_FACTORS` in `pnpcorr/benchmark.py`; the intrinsic values themselves stay in the manifest and are joined on `sample_id` when needed — and the bookkeeping of the solve: `num_points_setting` / `num_points_used` (the subset size), `num_outliers_used` and `effective_outlier_ratio` (of the subset), `subset_planar`, `ransac_threshold`, `num_noninvertible` (observations whose distortion could not be inverted, see Section 17), `num_inliers_est`, `family` and `robust`.
 
 ### 9.4 Running
 
@@ -573,7 +589,7 @@ python scripts/run_benchmark.py --data data --out results --task all --max-sampl
 * `--max-samples` draws a deterministic *stratified* subset: every (scene type, camera model, FOV class, condition) cell receives about the same number of samples, so each factor level is equally represented whatever the dataset size. `--sweep-samples` and `--max-rigs` do the same for the sweep and the multi-view task.
 * `--task pnp|sweep|calibration|multiview` runs one task; `--solvers sqpnp,epnp,cv_usac_magsac` restricts the solver set; `--split test` restricts to a split; `--query "camera_model == 'kannala_brandt'"` applies any pandas query to the manifest.
 * `--num-points 4,6,8,12,20,50,100,500` sets the subset sizes of the sweep; `--max-iters`, `--confidence`, `--threshold` control the robust estimators; `--seed` fixes the subset selection and the RANSAC seeds. The point subsets are drawn from a stream that depends only on the sample, never on how many solvers are being evaluated, so a `--solvers`-restricted run is directly comparable with a full one.
-* Runtime: about 1–2 s per sample for the PnP task with all 15 solvers on ~1 000-point views (the robust solvers dominate; at 95 % outliers OpenCV's RANSAC runs its full iteration budget), 2–8 s per rig for the from-scratch bundle adjustment. The default budget (`--max-samples 1500 --sweep-samples 400 --max-rigs 60`) takes roughly 45–60 minutes; the command above with 3 000 samples about twice that.
+* Runtime, measured on two cores: 1.5 s per sample for the PnP task on ≈ 1 400-point views (the robust solvers dominate; at 95 % outliers OpenCV's RANSAC runs its full iteration budget), 1.8 s per sample for the eight-size sweep, 25 ms per single-view calibration, and per rig 0.2 s for OpenCV against 2.8 s for the from-scratch bundle adjustment. Thirteen of the fifteen solvers appear in the all-points tasks; `p3p` and `ap3p` are defined at exactly four correspondences and appear in the sweep. The `small`-tier budget of Section 9.6 (`--max-samples 600 --sweep-samples 120 --max-rigs 30`) took 20 minutes, and the default budget (`--max-samples 1500 --sweep-samples 400 --max-rigs 60`) takes roughly 50.
 
 Outputs: `results/pnp_results.csv`, `results/pnp_num_points_results.csv`, `results/calibration_results.csv`, `results/multiview_results.csv` (one row per solve with every factor and metric) and `results/benchmark_meta.json` (environment, arguments, timing).
 
@@ -587,29 +603,40 @@ writes `results/tables/*.csv` + `*.md` and the combined `results/summary.md` / `
 
 | table | content |
 |---|---|
-| `pnp_overview_all`, `_outlier_free`, `_with_outliers` | per solver: solves, returned %, success %, median / mean rotation error, relative translation error, reprojection RMSE, runtime |
+| `pnp_overview_all`, `_outlier_free`, `_with_outliers` | per solver: family, solves, returned %, success %, success when returned %, median and mean rotation error, relative translation error, reprojection RMSE, runtime |
 | `pnp_rot_err_vs_noise`, `pnp_reproj_vs_noise` | solver × σ (outlier-free) |
 | `pnp_rot_err_quantization` | effect of integer pixels at σ = 0 and 0.5 |
 | `pnp_success_vs_outliers`, `pnp_rot_err_vs_outliers`, `pnp_inlier_precision_vs_outliers`, `pnp_inlier_recall_vs_outliers` | solver × outlier ratio (uniform outliers, σ = 0.5) |
 | `pnp_success_vs_outlier_type` | uniform vs swapped outliers at 20 % and 50 % |
 | `pnp_rot_err_by_scene_type`, `_by_camera_model`, `_by_fov_class`, `_by_distortion_level` | factor tables on outlier-free data |
 | `pnp_runtime`, `pnp_failure_reasons` | timing; why solvers returned nothing |
-| `pnp_sweep_*` | the same tables for the number-of-points sweep plus `rot_err_vs_num_points`, `success_vs_num_points`, `runtime_vs_num_points` |
+| `pnp_sweep_*` | the sweep's own four tables: `overview_all`, pooled over the subset sizes, plus `rot_err_vs_num_points`, `success_vs_num_points` and `runtime_vs_num_points`. The factor tables above are not repeated, the sweep being outlier-free by construction |
 | `calibration_*` | single-view DLT: overview, focal error by model / distortion level / FOV class / scene type / noise |
 | `multiview_*` | multi-view calibration: overview, focal error and success by camera model / FOV class / noise / scene type |
 
 ### 9.6 What the `small` tier shows
 
-The numbers below come from `results/summary.md` of a `small` run: 600 stratified PnP samples with all visible correspondences, 120 samples for the sweep, 600 single-view calibrations, 30 multi-view rigs, OpenCV 4.13. A copy of that summary is kept in [`docs/small_tier_summary.md`](docs/small_tier_summary.md). The `full` tier gives far tighter statistics, but the qualitative picture is stable:
+The numbers below are the `small` tier's own benchmark, produced by
 
-* **Exact observations.** Every non-robust solver and every LM-refined solver recovers the pose to 10⁻¹²–10⁻¹⁵ deg (DLT + LM 8 × 10⁻¹⁵ deg, SQPnP 1 × 10⁻¹² deg). OpenCV's RANSAC variants without refinement stop at 3 × 10⁻⁷ deg and MAGSAC++ at 3 × 10⁻⁵ deg, because their final estimate is not polished.
-* **Noise.** Errors grow linearly with σ: with σ = 2 px and ≈ 1 000 points the median rotation error of the LM-refined solvers is ≈ 0.03 deg (DLT + LM 0.031, EPnP + LM 0.032, iterative 0.030, SQPnP 0.032); the linear DLT alone is nearly three times worse (0.082). Integer-pixel quantization without noise costs 0.004–0.007 deg for every solver except the linear DLT (0.013), the same as σ ≈ 0.3 px, as expected from the 0.289 px standard deviation of rounding.
-* **Outliers.** Non-robust solvers keep 0–60 % success at 5 % outliers and ≈ 0 % from 20 % on, which is what the outlier conditions are there to measure. The from-scratch `ransac_p3p` (3-point hypotheses, LM re-fit) and MAGSAC++ keep 100 % success up to 80 % outliers and fall to 24 % and 29 % at 95 %, where 2 000 iterations are no longer enough (at 5 % inliers the expected number of 3-point samples for one all-inlier draw is 8 000). `cv_ransac_epnp` draws 5-point samples and already drops to 46 % at 80 % outliers, `cv_ransac_ap3p` (4-point samples) to 93 %, exactly the (1 − ε)ᵐ ordering. Swapped and uniform outliers are equally hard for every robust solver.
-* **Planar scenes.** The DLT variants are reported as *degenerate* on every `planar_single` sample (118 of 600 solves) and IPPE, SQPnP and the iterative solver handle planes without any loss (0.011 deg median over the outlier-free conditions). OpenCV's EPnP, however, is numerically unreliable on coplanar points (54 % success on outlier-free planar samples, 0.19 deg median), and because `solvePnPRansac` always re-estimates the final pose with EPnP, all three `cv_ransac_*` variants inherit that weakness on planar scenes (0.14–0.36 deg median versus 0.004–0.019 deg on the other scene types) while `ransac_p3p` (0.007 deg) and MAGSAC++ (0.009 deg) do not.
-* **Few points.** With n = 4, SQPnP succeeds on 94 % of the subsets (0.15 deg median), the minimal P3P / AP3P solvers on 86 % (0.39 deg), IPPE on 67 % (0.67 deg); EPnP is not a minimal solver and reaches only 41 % (7.3 deg). From n ≈ 8 on, all LM-refined solvers converge to the same accuracy.
-* **Fields of view.** For calibrated PnP the FOV barely matters to any solver but the linear DLT (0.003–0.017 deg medians in every class, IPPE on planes up to 0.022 at wide FOV); only the DLT degrades on telephoto views (0.048 deg versus 0.015 deg at normal FOV). For anything that estimates intrinsics, narrow fields of view are the ill-conditioned case: the principal point becomes nearly unobservable and multi-view calibration returns principal-point errors of 50–85 px on telephoto rigs (both OpenCV and the bundle adjustment) although the reprojection error stays small.
-* **Calibration.** The single-view DLT recovers the intrinsics of pinhole cameras to 0.04 % focal error, and shows the expected systematic bias on distorted cameras (1 % for Brown–Conrady, 5 % for Kannala–Brandt, 8.5 % for the fisheye class) because it has no distortion model. In multi-view calibration the from-scratch bundle adjustment matches OpenCV's `calibrateCamera` to the fourth digit on Brown–Conrady rigs (0.0069 % focal error for both) and on pinhole rigs (0.0185 % for both, since they solve the identical problem: `calibrateCamera` always fits the five Brown–Conrady coefficients, and the benchmark asks the bundle adjustment for the same model). Unlike `cv2.fisheye.calibrate`, whose extrinsic initialisation assumes a planar target, it also converges on non-planar Kannala–Brandt rigs (0.03 % versus 6.5 % focal error, 100 % versus 40 % success).
-* **Runtime** (≈ 1 000 correspondences, medians of that run; absolute values scale with the CPU, the *ratios* do not): SQPnP 0.9 ms, EPnP 1.4 ms, DLT 1.9 ms, LM-refined solvers ≈ 10 ms, OpenCV RANSAC / MAGSAC++ 8–18 ms, the from-scratch RANSACs 25–55 ms (pure Python loop).
+```bash
+python scripts/run_pipeline.py --config configs/small.yaml --out-root runs/small --workers 4 \
+    --max-samples 600 --sweep-samples 120 --max-rigs 30 \
+    --figures docs/figures --summary-doc docs/small_tier_summary.md
+```
+
+that is, 600 stratified PnP samples with all visible correspondences (≈ 1 400 per view), 120 samples for the number-of-points sweep, 600 single-view calibrations and 30 multi-view rigs, on OpenCV 4.13. The pipeline writes the complete summary to [`docs/small_tier_summary.md`](docs/small_tier_summary.md), so the tables quoted here are a generated artefact rather than a transcription. The `full` tier gives far tighter statistics; the qualitative picture is stable.
+
+Every solver is offered all 600 samples, including the ones outside its domain, so the counts below share one denominator. Reading the overview: `returned (%)` is coverage, `success when returned (%)` is accuracy where the solver answered. IPPE answers on the 17.8 % of samples that are coplanar and the DLT variants on the 82.2 % that are not.
+
+* **Exact observations (σ = 0, no quantization).** The solvers that end in a Levenberg–Marquardt step recover the pose to between 7 × 10⁻¹⁵ and 2 × 10⁻¹⁴ deg (DLT + LM and `ransac_dlt` 7.3 × 10⁻¹⁵, `ransac_p3p` 7.4 × 10⁻¹⁵, EPnP + LM 8.6 × 10⁻¹⁵, OpenCV's iterative solver 2.2 × 10⁻¹⁴). The ones that stop at their algebraic solution land six to eighty times higher — the linear DLT 4.7 × 10⁻¹⁴, IPPE 1.6 × 10⁻¹³, EPnP 3.2 × 10⁻¹³, SQPnP 5.9 × 10⁻¹³ — which is still far below any measurement error. `cv_ransac_epnp` and `cv_ransac_ap3p` stop at 3.2 × 10⁻⁷ deg and MAGSAC++ at 2.5 × 10⁻⁵, because what they return is the consensus model, unpolished.
+* **Noise.** The error grows linearly with σ. At σ = 2 px the median rotation error of the refined solvers is ≈ 0.03 deg (DLT + LM 0.031, `ransac_p3p` 0.033, SQPnP 0.034, EPnP + LM 0.034, iterative 0.035) and the linear DLT is three times worse at 0.094. Integer-pixel quantization with no other noise costs 0.0033–0.0054 deg for every solver except the linear DLT (0.013): the same as σ ≈ 0.3 px, which is what the 1/√12 = 0.289 px standard deviation of rounding predicts.
+* **Outliers.** The uniform sweep at σ = 0.5 px separates the estimators sharply. `ransac_p3p` holds 100 % success to 80 % contamination and MAGSAC++ 98 %, and they fall to 20 % and 38 % at 95 %, where 2 000 iterations are no longer enough — at 5 % inliers the expected number of 3-point draws before one is clean is 8 000. `cv_ransac_ap3p` (4-point samples) keeps 89 % at 80 % outliers and `cv_ransac_epnp` (5-point samples) only 48 %, exactly the (1 − ε)ᵐ ordering; `ransac_dlt` (6-point samples) breaks down first, at 4 % by 80 %. The non-robust solvers are what the sweep is there to measure against: at 5 % outliers they already run from 56 % (EPnP + LM) down to 2 % (SQPnP, DLT), at 20 % uniform contamination none of them clears 9 %, and from 50 % on they are at zero. Swapped and uniform outliers are close to equally hard for the robust estimators — four of the six agree within one point at both 20 % and 50 %, and the largest gap is `ransac_dlt`'s seven points at 20 %, in favour of the swapped variant.
+* **Planar scenes.** On the 47 outlier-free `planar_single` samples the DLT variants return nothing at all and say why (`degenerate: coplanar points`), which is the designed behaviour rather than a silently wrong pose. IPPE (0.013 deg), the iterative solver (0.0093), SQPnP (0.012), `ransac_p3p` (0.0069) and MAGSAC++ (0.0069) all succeed on every one of them. OpenCV's EPnP is the outlier: 49 % success and a 17.6 deg median, and because `solvePnPRansac` re-estimates its final pose with EPnP, `cv_ransac_epnp` (13.4 deg) and `cv_ransac_ap3p` (17.4 deg) inherit the weakness. Adding the LM step repairs it — `epnp_lm` reaches 0.016 deg and `cv_ransac_epnp_lm` 0.44 deg — and the solvers that never route through EPnP are unaffected.
+* **Few points.** At n = 4, SQPnP succeeds on 97 % of the subsets (0.13 deg median), the minimal P3P and AP3P solvers on 95 % (0.24 deg) and EPnP + LM on 80 % (0.17 deg); plain EPnP is not a minimal solver and manages 58 % (1.8 deg). IPPE applies to the quarter of the subsets that are coplanar and succeeds on 77 % of those. From n ≈ 12 on, every LM-refined solver converges to the same accuracy, and by n = 500 they lie between 0.006 and 0.017 deg (0.018 for the linear DLT, 0.020 for IPPE).
+* **Fields of view.** For calibrated PnP the field of view barely matters: every solver but two sits between 0.002 and 0.014 deg in every class. The exceptions are the linear DLT, which degrades to 0.087 deg on telephoto views against 0.015 deg at normal FOV, and IPPE, which spans 0.0005 deg on fisheye views to 0.042 deg at normal FOV because it only ever sees the planar scenes. For anything that estimates intrinsics, narrow fields are the ill-conditioned case — the principal point becomes nearly unobservable, and multi-view calibration returns 13 px (OpenCV) to 23 px (bundle adjustment) of principal-point error on telephoto rigs while the reprojection residual stays small.
+* **Calibration.** The single-view DLT recovers the intrinsics of pinhole cameras to 0.02 % focal error and shows the expected systematic bias where it has no distortion model: 0.63 % on Brown–Conrady and 11.6 % on Kannala–Brandt cameras (5.8 % over the fisheye FOV class). In multi-view calibration the from-scratch bundle adjustment matches OpenCV's `calibrateCamera` to the fourth digit on Brown–Conrady rigs (0.0175 % against 0.0178 % focal error) and on pinhole rigs (0.0295 % against 0.0294 %, since both fit the same five Brown–Conrady coefficients). The two part company on non-planar fisheye rigs, where `cv2.fisheye.calibrate` initialises its extrinsics under a planar-target assumption: 18.6 % focal error and 43 % success against 0.006 % and 86 % for the bundle adjustment.
+* **Runtime** (medians over ≈ 1 400-correspondence views; absolute values scale with the CPU, the ratios do not): IPPE 0.2 ms, SQPnP 0.8 ms, EPnP 1.4 ms, DLT 1.8 ms, the LM-refined solvers 8.6–9.9 ms, OpenCV's RANSAC and MAGSAC++ 8–18 ms, and the from-scratch RANSACs 22 ms (`ransac_p3p`) and 47 ms (`ransac_dlt`), whose inner loop is pure Python.
+* **Invertibility.** Of the 848 876 correspondences the PnP task undistorted, 862 — 0.10 % — had no pre-image inside the invertible domain and kept their raw coordinates. Nearly all are injected outliers thrown outside the image circle of a strongly distorted lens: 782 of the 862 are on `strong` cameras, and only 21 occur under an outlier-free condition. The `num_noninvertible` column reports the count per solve.
 
 ## 10. Visualisations
 
@@ -617,7 +644,12 @@ The numbers below come from `results/summary.md` of a `small` run: 600 stratifie
 python scripts/make_figures.py --data data --results results
 ```
 
-Figures go to `docs/figures/` by default, the directory the table below links and the images further down embed, so regenerating them makes this document render your own run. Pass `--out DIR` to write them elsewhere, or `--dataset-only` / `--benchmark-only` to draw one half.
+Figures go to `docs/figures/` by default, the directory the table below links and the images further down embed, so regenerating them makes this document render your own run. Pass `--out DIR` to write them elsewhere, or `--dataset-only` / `--benchmark-only` to draw one half — which is what lets the five dataset figures describe the released tier while the eight benchmark figures come from the `small` benchmark of Section 9.6:
+
+```bash
+python scripts/make_figures.py --data data --dataset-only --out docs/figures
+python scripts/make_figures.py --results runs/small/results --benchmark-only --out docs/figures
+```
 
 | figure | content |
 |---|---|
@@ -643,7 +675,7 @@ Figures go to `docs/figures/` by default, the directory the table below links an
   <img src="docs/figures/pnp_success_heatmap.png" alt="Success heat map" width="90%">
 </p>
 
-Every figure name above links to the committed version, produced by the `small` run that Section 9.6 quotes, so the complete set can be inspected without generating anything; re-running `make_figures.py` overwrites them with your own. The figures use one fixed colour per solver (the same solver always has the same colour), marker shapes as a second encoding, at most eight series per panel and a single-hue sequential ramp for heat maps.
+Every figure name above links to the committed version, so the complete set can be inspected without generating anything; re-running `make_figures.py` overwrites them with your own. The five `dataset_*` figures are drawn from the released `full` tier and the eight `pnp_*` / `calibration_*` figures from the `small` benchmark quoted in Section 9.6, which is the same split the two commands above produce. The figures use one fixed colour per solver (the same solver always has the same colour), marker shapes as a second encoding, at most eight series per panel and a single-hue sequential ramp for heat maps.
 
 ## 11. The one-command pipeline
 
@@ -651,7 +683,7 @@ Every figure name above links to the committed version, produced by the `small` 
 python scripts/run_pipeline.py --config configs/full.yaml --out-root . --workers 6 --max-samples 3000 --sweep-samples 600 --max-rigs 100 --repo-id Ezharjan/PnPCorrespondences
 ```
 
-runs, in order: generate → validate → export examples → benchmark (all tasks) → analyse → figures → dataset card, producing `data/`, `results/` and `docs/figures/` under `--out-root` (`--figures DIR` overrides the figure directory). `--skip-generate` reuses an existing `data/`, `--skip-benchmark` only draws the dataset figures, `--validate-cameras N` validates a subset for very large tiers. Every stage is an ordinary script call that is printed before it runs, so any stage can be re-run individually.
+runs, in order: generate → validate → export examples → benchmark (all tasks) → analyse → figures → benchmark summary → dataset card, producing `data/`, `results/` and `docs/` under `--out-root`. `--figures DIR` and `--summary-doc PATH` override where the two documentation artefacts land, `--no-summary-doc` skips the summary copy, `--skip-generate` reuses an existing `data/`, `--skip-benchmark` only draws the dataset figures, `--validate-cameras N` validates a subset for very large tiers, and `--no-progress` silences the progress bars of every stage, which is what you want when the output goes to a log file. Every stage is an ordinary script call that is printed before it runs, so any stage can be re-run individually.
 
 ## 12. Housekeeping: caches, disk space and regeneration
 
@@ -676,9 +708,9 @@ rm -rf data results                        # Linux / macOS
 Remove-Item -Recurse -Force data, results  # Windows PowerShell
 ```
 
-`docs/figures/` is part of the documentation rather than a generated artefact, and `make_figures.py` writes over it. Pass `--out DIR` (or `--figures DIR` to the pipeline) to send a new set somewhere else and keep the figures this document shows.
-
 or let the generator replace it in place with `python scripts/generate_dataset.py --config configs/full.yaml --out data --overwrite`, which clears `hdf5/`, `metadata/`, `examples/`, `manifest.*` and `README.md` inside `--out` and writes a fresh dataset. `--overwrite` is also what `run_pipeline.py` uses, so re-running the pipeline never mixes two generations.
+
+`docs/` holds documentation rather than scratch output, so no cleaning script touches it, but both of its artefacts are written by the pipeline: `make_figures.py` overwrites `docs/figures/`, and `run_pipeline.py` copies `results/summary.md` to `docs/<tier>_tier_summary.md`. Pass `--figures DIR` and `--summary-doc PATH` (or `--no-summary-doc`) to send a new set somewhere else and keep the versions this document shows.
 
 Disk-space notes: the HDF5 shards dominate (Section 7); benchmark results are a few MB of CSV; figures a few MB of PNG. During an upload, `huggingface_hub` writes its resumable state into `data/.cache/huggingface/`. That directory is not uploaded, and is safe to delete once the upload has finished (`--all` above).
 
@@ -714,7 +746,7 @@ python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorres
 python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --private
 ```
 
-The script creates the repository if needed, private unless `--public` is given, and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits: keep individual files below 50 GB (shards are ≈ 300 MB with `max_scenes_per_file: 20`) and folders below 10 000 files.
+The script creates the repository if needed, private unless `--public` is given, and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits: keep individual files below 50 GB (the `full` tier's shards are 252–387 MB with `max_scenes_per_file: 20`) and folders below 10 000 files; the `full` tier uploads twenty shards and about twenty other files.
 
 **Step 5 — verify.** Open `https://huggingface.co/datasets/Ezharjan/PnPCorrespondences`: the card is rendered, the *Dataset Viewer* shows the manifest table, and *Files* lists the HDF5 shards.
 
@@ -739,7 +771,7 @@ then read it exactly as in Section 6.4 with `root` in place of `data`. **Updatin
 
 ## 14. Configuration reference
 
-All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML files only override what they need to (`scenes.counts` and `conditions.items` are replaced, everything else is merged). The most relevant keys:
+All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML files only override what they need to. Mappings of competing alternatives are *replaced* by the file (`dataset.splits`, `scenes.counts`, `scenes.planar_layout_probs`, `cameras.model_probs`, `cameras.fov_class_probs`, `cameras.distortion_levels.probs`, `conditions.items`); everything else, including the lookup tables `cameras.fov_classes` and the per-model distortion ranges, is deep-merged. Every value is validated on load, so a configuration that could produce inconsistent data is rejected with a message naming the key. The most relevant keys:
 
 | key | default | meaning |
 |---|---|---|
@@ -795,7 +827,7 @@ All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML file
 * **Effective distortion coefficients.** Raw Brown–Conrady coefficients are meaningless without the field of view; the generator therefore samples the displacement at the image corner and derives the raw coefficients, and restricts each polynomial to its injective domain so that every stored observation has a unique pre-image. For Brown–Conrady that domain is bounded by the first zero of the full 2-D Jacobian determinant rather than by radial monotonicity: with tangential terms present the two differ, and beyond the fold a distorted position has two pre-images that both satisfy the forward model exactly, so no inverse solver can separate them. Real lenses with visible folding outside the sensor are covered because the domain must only cover 80 % of the corner radius.
 * **Nominal field of view.** `hfov_deg` is the FOV of the *undistorted* model ($f_x$ follows from it exactly); the effective FOV of a distorted lens differs slightly.
 * **Undistortion for calibrated PnP.** Observations are mapped to the equivalent pinhole image with the exact inverse of the ground-truth distortion (bisection + Newton, 10⁻⁹ accuracy) so that every solver sees the same problem. Random outliers that fall outside the invertible domain keep their raw coordinates (they are outliers anyway); the benchmark reports how many per solve in the `num_noninvertible` column.
-* **Planar inputs to OpenCV.** Coplanar points are expressed in their own plane frame ($z = 0$ exactly) before calling OpenCV, so that the result does not depend on the arbitrary orientation of the world frame. A planar target in a rotated world frame is coplanar only to floating-point rounding, and OpenCV's EPnP amplifies that $10^{-16}$ third dimension badly once observations carry noise: on tilted planes at σ = 0.5 px it gives a 20° median error in the rotated frame versus 0.23° for the same target expressed at $z = \text{const}$. The canonical frame reproduces the axis-aligned result at every noise level, so the benchmark measures the solver rather than the frame it was handed. The transform is exact, is applied to every OpenCV solver uniformly and never selectively, and EPnP's ~47 % failure rate on planar targets survives it, and is a property of OpenCV's implementation rather than of this preprocessing.
+* **Planar inputs to OpenCV.** Coplanar points are expressed in their own plane frame ($z = 0$ exactly) before calling OpenCV, so that the result does not depend on the arbitrary orientation of the world frame. A planar target in a rotated world frame is coplanar only to floating-point rounding, and OpenCV's EPnP amplifies that $10^{-16}$ third dimension badly once observations carry noise: on tilted planes at σ = 0.5 px it gives a 20° median error in the rotated frame versus 0.23° for the same target expressed at $z = \text{const}$. The canonical frame reproduces the axis-aligned result at every noise level, so the benchmark measures the solver rather than the frame it was handed. The transform is exact and is applied to every OpenCV solver uniformly, never selectively; in that controlled experiment the ~47 % of EPnP solves that land above 1° on planar targets survives it unchanged, so the weakness is a property of OpenCV's implementation rather than of this preprocessing. On the dataset itself Section 9.6 measures the same thing as a 49 % success rate on outlier-free planar samples.
 * **No occlusion, no image formation.** By design, every point in the frustum is visible (walls do not occlude). Feature-detector effects are modelled only through Gaussian noise, quantization and outliers.
 * **Translation error normalisation.** The relative translation error divides by the mean depth of the inlier points rather than by $\lVert\mathbf{t}\rVert$, which is ill-defined for cameras close to the world origin (depth-stratified scenes).
 * **Learned solvers** are out of scope for the shipped benchmark (no weights, no framework dependency); the splits make them straightforward to add.

@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 import platform
 import time
+import zlib
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
@@ -103,6 +104,18 @@ def _factor_row(row: pd.Series) -> Dict[str, Any]:
     return {k: row[k] for k in SAMPLE_FACTORS if k in row.index}
 
 
+def _solver_seed(sample_key: Sequence[int], solver_name: str, setting: Any) -> int:
+    """
+    Deterministic RANSAC seed for one (sample, solver, subset size).
+
+    It is derived from the sample, the solver's *name* and the subset size, never
+    from the solver's position in the list being evaluated, so restricting a run
+    with ``--solvers`` reproduces the numbers of a full run exactly.
+    """
+    name_key = zlib.crc32(f"{solver_name}|{setting}".encode("utf-8"))
+    return int(np.random.default_rng(list(sample_key) + [1, int(name_key)]).integers(2 ** 31 - 1))
+
+
 def environment_info() -> Dict[str, Any]:
     info = {
         "pnpcorr_version": __version__,
@@ -149,12 +162,14 @@ def run_pnp_benchmark(data_dir, manifest_subset: pd.DataFrame, solver_names: Opt
             thr = ransac_threshold(threshold_policy, float(row["noise_sigma"]), bool(row["quantize"]))
             X_all = sample.X
             m = sample.num_visible
-            # Two independent streams: the point subsets must be a function of the
-            # sample only, never of how many solvers are being evaluated, or results
-            # from a --solvers run would not be comparable with a full run.
+            # Both the point subsets and each solver's random seed must be a function
+            # of the sample only, never of how many solvers are being evaluated, or
+            # results from a --solvers run would not be comparable with a full run.
+            # The subsets come from one stream keyed on the sample; a robust solver's
+            # seed is keyed on the sample *and its own name*, so it does not depend on
+            # the solver's position in the list.
             key = [seed, int(row["scene_id"]), int(row["camera_id"]), int(row["condition_id"])]
             subset_rng = np.random.default_rng(key + [0])
-            solver_rng = np.random.default_rng(key + [1])
             for setting in num_points:
                 if setting == "all":
                     idx = np.arange(m)
@@ -180,15 +195,18 @@ def run_pnp_benchmark(data_dir, manifest_subset: pd.DataFrame, solver_names: Opt
                 for spec in specs:
                     if n < spec.min_points or (spec.exact_points and n != spec.min_points):
                         continue
-                    if spec.planar == "only" and not planar:
-                        continue
+                    # Solvers restricted to (or excluded from) coplanar inputs are not
+                    # skipped: they are called and decline, so every solver is scored
+                    # over the same set of samples and the `returned (%)` column of one
+                    # solver is directly comparable with another's.  The reason is
+                    # recorded in `failure_reason` and tabulated by the analysis step.
                     rec = dict(base)
                     rec.update({"solver": spec.name, "family": spec.family, "robust": bool(spec.robust)})
                     reason = ""
                     t0 = time.perf_counter()
                     try:
                         est = spec.fn(X, uv, intr.K, threshold=thr, max_iters=max_iters, confidence=confidence,
-                                      seed=int(solver_rng.integers(2**31 - 1)))
+                                      seed=_solver_seed(key, spec.name, setting))
                     except Exception as exc:  # solver crashed: record as failure
                         est = None
                         reason = f"exception: {type(exc).__name__}: {exc}"[:160]

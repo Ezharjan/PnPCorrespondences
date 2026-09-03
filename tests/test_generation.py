@@ -187,3 +187,64 @@ def test_generation_is_deterministic_and_worker_independent(tmp_path):
         s1 = r1.read(m1.iloc[-1])
         s2 = r2.read(m2.iloc[-1])
         assert np.array_equal(s1.uv, s2.uv) and np.array_equal(s1.points_3d, s2.points_3d)
+
+
+# ----------------------------------------------------------------------------- config semantics
+def test_yaml_restrictions_are_not_merged_back(tmp_path):
+    """A YAML file that narrows a set of alternatives must win outright: merging the
+    default back in would silently reinstate the models the user removed."""
+    import yaml as _yaml
+
+    path = tmp_path / "restricted.yaml"
+    path.write_text(_yaml.safe_dump({
+        "scenes": {"counts": {"volumetric": 4}},
+        "cameras": {"model_probs": {"pinhole": 1.0},
+                    "fov_class_probs": {"pinhole": {"normal": 1.0}}},
+        "dataset": {"splits": {"train": 0.5, "test": 0.5}},
+        "conditions": {"mode": "list",
+                       "items": [{"noise_sigma": 0.5, "quantize": False,
+                                  "outlier_ratio": 0.0, "outlier_type": "uniform"}]},
+    }), encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg["cameras"]["model_probs"] == {"pinhole": 1.0}
+    assert cfg["cameras"]["fov_class_probs"] == {"pinhole": {"normal": 1.0}}
+    assert cfg["scenes"]["counts"] == {"volumetric": 4}
+    assert set(cfg["dataset"]["splits"]) == {"train", "test"}
+    assert len(expand_conditions(cfg)) == 1
+    # Lookup tables keyed by name stay merged: an unused entry changes nothing.
+    assert set(cfg["cameras"]["fov_classes"]) == {"narrow", "normal", "wide", "fisheye"}
+
+
+def test_config_used_yaml_round_trips(tmp_path):
+    """`metadata/config_used.yaml` is the reproducibility record, so re-loading it
+    must give back exactly the configuration that produced the dataset."""
+    from pnpcorr.config import config_to_yaml
+
+    cfg = _cfg(scenes_per_type=1, intrinsics=1, poses=1)
+    cfg["cameras"]["model_probs"] = {"brown_conrady": 1.0}
+    cfg["cameras"]["fov_class_probs"] = {"brown_conrady": {"normal": 1.0}}
+    generate_dataset(cfg, tmp_path, workers=1, progress=False, log=None)
+    reloaded = load_config(tmp_path / "metadata" / "config_used.yaml")
+    assert reloaded == cfg
+    assert _yaml_roundtrip(cfg) == cfg
+
+
+def _yaml_roundtrip(cfg):
+    import yaml as _yaml
+
+    from pnpcorr.config import config_to_yaml
+
+    return _yaml.safe_load(config_to_yaml(cfg))
+
+
+def test_num_outliers_is_the_exact_floor():
+    """`int(m * ratio)` is not floor(m*ratio) for every ratio; the generator and the
+    validator must agree on one definition."""
+    from fractions import Fraction
+
+    from pnpcorr.noise import num_outliers
+
+    for ratio in (0.05, 0.2, 0.29, 0.5, 0.7, 0.8, 0.95):
+        exact = Fraction(str(ratio))
+        for m in range(1, 3000):
+            assert num_outliers(m, ratio) == (m * exact).__floor__(), (m, ratio)

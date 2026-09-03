@@ -311,8 +311,15 @@ def _undistort_brown(xd, yd, coeffs, valid_radius, newton_iters=25):
             break
     xn, yn = distort_points(x, y, BROWN_CONRADY, coeffs)
     residual = np.hypot(xn - xd, yn - yd)
-    ok = (residual < 1e-9) & (np.hypot(x, y) <= upper * (1.0 + 1e-9))
-    return x, y, ok
+    r = np.hypot(x, y)
+    ok = (residual < 1e-9) & (r <= upper * (1.0 + 1e-9))
+    # Newton is unconstrained and can walk far outside the injective domain for a
+    # target that has no pre-image there.  Those results are already flagged by
+    # ``ok``; clamping them to the domain boundary keeps the returned coordinates
+    # finite and bounded for callers that use them anyway.
+    clamp = np.ones_like(r)
+    np.divide(upper, r, out=clamp, where=r > upper)
+    return x * clamp, y * clamp, ok
 
 
 def _undistort_kb(xd, yd, coeffs, valid_theta):
@@ -449,7 +456,15 @@ def project_pinhole(points_3d: np.ndarray, K: np.ndarray, R: np.ndarray, t: np.n
 # Intrinsics sampling
 # ----------------------------------------------------------------------------
 def _choice(rng: np.random.Generator, probs: Dict[str, float]) -> str:
-    keys = list(probs.keys())
+    """
+    Draw one key of ``probs`` with the given (unnormalised) weights.
+
+    The keys are sorted first, so the draw depends on the *content* of the mapping
+    and not on the order in which a YAML file happens to list it.  Without the
+    sort, two configurations that assign identical probabilities would produce
+    different datasets from the same master seed.
+    """
+    keys = sorted(probs.keys())
     p = np.asarray([float(probs[k]) for k in keys], dtype=np.float64)
     p = p / p.sum()
     return str(keys[int(rng.choice(len(keys), p=p))])

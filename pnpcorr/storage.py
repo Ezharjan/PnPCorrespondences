@@ -30,6 +30,7 @@ import datetime as _dt
 import json
 import math
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
@@ -295,8 +296,12 @@ class DatasetWriter:
             fh.close()
         self._files.clear()
         self._manifest_fh.close()
+        # float_precision="round_trip" is required: pandas' default C float parser
+        # is not correctly rounded, so without it the Parquet manifest ends up one
+        # unit in the last place away from the HDF5 attribute it was written from.
         manifest = pd.read_csv(self._manifest_path, dtype={"scene_layout": str, "condition_name": str},
-                               keep_default_na=False, na_values=["nan", "NaN", ""])
+                               keep_default_na=False, na_values=["nan", "NaN", ""],
+                               float_precision="round_trip")
         for col, dtype in MANIFEST_DTYPES.items():
             if col in manifest.columns:
                 manifest[col] = manifest[col].astype(dtype)
@@ -361,7 +366,7 @@ def load_manifest(data_dir: "str | Path") -> pd.DataFrame:
     parquet = data_dir / "manifest.parquet"
     if parquet.exists():
         return pd.read_parquet(parquet)
-    return pd.read_csv(data_dir / "manifest.csv")
+    return pd.read_csv(data_dir / "manifest.csv", float_precision="round_trip")
 
 
 def load_stats(data_dir: "str | Path") -> Dict[str, Any]:
@@ -457,16 +462,40 @@ def read_sample(h5: "h5py.File | str | Path", h5_path: str, file_label: str = ""
 
 
 class SampleReader:
-    """Reads samples listed in a manifest, keeping HDF5 files open."""
+    """
+    Reads samples listed in a manifest, keeping a bounded number of HDF5 files open.
 
-    def __init__(self, data_dir: "str | Path"):
+    HDF5 keeps a metadata cache per open file that grows with every object touched.
+    A pass over a large tier touches hundreds of thousands of groups, so holding
+    every shard open until the end costs several gigabytes; keeping at most
+    ``max_open`` files and reopening one after ``reopen_after`` reads bounds the
+    resident set to a constant, at the price of an occasional file open. Access
+    patterns in this package are grouped by file, so files are rarely evicted.
+    """
+
+    def __init__(self, data_dir: "str | Path", max_open: int = 4, reopen_after: int = 2000):
         self.data_dir = Path(data_dir)
-        self._files: Dict[str, h5py.File] = {}
+        self.max_open = max(1, int(max_open))
+        self.reopen_after = max(1, int(reopen_after))
+        self._files: "OrderedDict[str, h5py.File]" = OrderedDict()
+        self._reads: Dict[str, int] = {}
 
     def file(self, rel_path: str) -> h5py.File:
-        if rel_path not in self._files:
-            self._files[rel_path] = h5py.File(self.data_dir / rel_path, "r")
-        return self._files[rel_path]
+        handle = self._files.get(rel_path)
+        if handle is not None and self._reads[rel_path] >= self.reopen_after:
+            handle.close()
+            del self._files[rel_path]
+            handle = None
+        if handle is None:
+            handle = h5py.File(self.data_dir / rel_path, "r")
+            self._files[rel_path] = handle
+            self._reads[rel_path] = 0
+            while len(self._files) > self.max_open:
+                _, evicted = self._files.popitem(last=False)
+                evicted.close()
+        self._files.move_to_end(rel_path)
+        self._reads[rel_path] += 1
+        return handle
 
     def read(self, row: "pd.Series | Dict[str, Any]") -> Sample:
         rel = str(row["file"])
@@ -480,6 +509,7 @@ class SampleReader:
         for fh in self._files.values():
             fh.close()
         self._files.clear()
+        self._reads.clear()
 
     def __enter__(self) -> "SampleReader":
         return self

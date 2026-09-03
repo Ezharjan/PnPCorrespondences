@@ -1,5 +1,7 @@
-# Small tier: ~1 minute, 30 scenes, 360 views, 5,400 samples, ~150 MB.
-# Good for developing solvers and checking the whole pipeline end to end.
+# Small tier: 30 scenes, 360 views, 5,400 samples, 7.8 M correspondences, ~146 MB.
+# Generation takes well under a minute; it is the tier the documented benchmark
+# results and the committed figures come from, and the right size for developing
+# a solver or checking the whole pipeline end to end.
 dataset:
   name: PnPCorrespondencesSmall
   version: "1.0.0"

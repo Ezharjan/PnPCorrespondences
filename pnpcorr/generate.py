@@ -144,10 +144,24 @@ def generate_dataset(cfg: Dict[str, Any], out_dir, workers: int = 1, progress: b
                 if bar:
                     bar.update(1)
         else:
+            # Bounded submission window rather than Pool.imap.  imap applies no
+            # backpressure: the workers keep producing scene records and the result
+            # handler queues every one of them, so when compression makes the writer
+            # slower than generation - which it is for the larger tiers - the queue
+            # grows without limit until the process is killed.  Keeping at most
+            # `max_inflight` scenes outstanding bounds the memory to that many
+            # records, and taking them in submission order keeps the output
+            # identical to the single-worker run.
+            max_inflight = max(2, 2 * int(workers))
             ctx = mp.get_context("spawn")
             with ctx.Pool(processes=int(workers)) as pool:
-                for rec in pool.imap(_worker, [(spec, cfg) for spec in specs], chunksize=1):
-                    writer.write_scene(rec)
+                pending: Dict[int, Any] = {}
+                submitted = 0
+                for index in range(n_total):
+                    while submitted < n_total and len(pending) < max_inflight:
+                        pending[submitted] = pool.apply_async(_worker, ((specs[submitted], cfg),))
+                        submitted += 1
+                    writer.write_scene(pending.pop(index).get())
                     if bar:
                         bar.update(1)
         if bar:

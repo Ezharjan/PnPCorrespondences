@@ -208,3 +208,46 @@ def test_benchmark_and_analysis(dataset, tmp_path):
     parts = {"pnp": summary, "calibration": summarize_calibration(cdf, tmp_path / "tables")}
     path = write_summary(tmp_path, parts, {"opencv": "test"})
     assert path.exists() and (tmp_path / "summary.json").exists()
+
+
+def test_robust_solver_seed_does_not_depend_on_the_solver_list(dataset):
+    """--solvers must not change the numbers a solver produces: a restricted run has
+    to be directly comparable with a full one, seeds included."""
+    manifest = load_manifest(dataset)
+    subset = select_samples(manifest, max_samples=4, seed=0)
+    full = run_pnp_benchmark(dataset, subset, ["ransac_dlt", "dlt_lm"], ["all"], seed=0, progress=False)
+    solo = run_pnp_benchmark(dataset, subset, ["ransac_dlt"], ["all"], seed=0, progress=False)
+    cols = ["sample_id", "rot_err_deg", "num_inliers_est", "trans_err_rel"]
+    a = full[full.solver == "ransac_dlt"][cols].reset_index(drop=True)
+    b = solo[solo.solver == "ransac_dlt"][cols].reset_index(drop=True)
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_every_solver_is_scored_over_the_same_samples(dataset):
+    """Domain-restricted solvers decline instead of being skipped, so `returned (%)`
+    means the same thing for all of them."""
+    manifest = load_manifest(dataset)
+    subset = select_samples(manifest, max_samples=6, seed=0)
+    solvers = ["dlt_lm"] + (["ippe", "sqpnp"] if HAVE_CV2 else [])
+    df = run_pnp_benchmark(dataset, subset, solvers, ["all"], seed=0, progress=False)
+    counts = df.groupby("solver").size()
+    assert counts.nunique() == 1, counts.to_dict()
+    if HAVE_CV2:
+        ippe = df[df.solver == "ippe"]
+        assert (ippe[~ippe["subset_planar"]]["failure_reason"].str.contains("coplanar")).all()
+        assert ippe[ippe["subset_planar"]]["ok"].all()
+
+
+def test_sample_reader_bounds_the_number_of_open_files(dataset):
+    """A pass over a large tier must not accumulate HDF5 file caches."""
+    from pnpcorr.storage import SampleReader
+
+    manifest = load_manifest(dataset)
+    with SampleReader(dataset, max_open=1, reopen_after=3) as reader:
+        for _, row in manifest.iterrows():
+            sample = reader.read(row)
+            assert sample.num_visible > 0
+            assert len(reader._files) <= 1
+        files = list(reader._files.values())
+        assert all(f for f in files)          # the surviving handle is still usable
+    assert not reader._files

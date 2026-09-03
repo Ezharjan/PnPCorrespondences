@@ -12,10 +12,15 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+import numpy as np
 import yaml
 
+from .noise import condition_name
+
 SCENE_TYPES = ("planar_single", "planar_multi", "volumetric", "mixed", "depth_stratified")
+SPLIT_ORDER = ("train", "val", "test")
 CAMERA_MODELS = ("pinhole", "brown_conrady", "kannala_brandt")
+PINHOLE_MODEL = "pinhole"
 FOV_CLASSES = ("narrow", "normal", "wide", "fisheye")
 OUTLIER_TYPES = ("uniform", "swap", "mixed")
 DISTORTION_LEVELS = ("mild", "strong")
@@ -181,6 +186,40 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 
+# Mappings whose keys are mutually exclusive alternatives with weights, or an
+# enumeration the user is choosing from.  A YAML file that supplies one of these
+# REPLACES the default outright; merging would silently reinstate an alternative
+# the user had deliberately removed - `cameras.model_probs: {pinhole: 1.0}` would
+# still draw Brown-Conrady and fisheye cameras with their default weights.
+# Lookup tables keyed by name (`cameras.fov_classes`, the per-model distortion
+# ranges) are merged as usual, because an unused entry in them changes nothing.
+REPLACED_MAPPINGS = (
+    ("dataset", "splits"),
+    ("scenes", "counts"),
+    ("scenes", "planar_layout_probs"),
+    ("cameras", "model_probs"),
+    ("cameras", "fov_class_probs"),
+    ("cameras", "distortion_levels", "probs"),
+    ("conditions", "items"),
+)
+
+
+def _lookup(cfg: Dict[str, Any], path: Iterable[str]) -> Any:
+    node: Any = cfg
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def _clear(cfg: Dict[str, Any], path: List[str]) -> None:
+    node = cfg
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = {} if isinstance(node[path[-1]], dict) else []
+
+
 def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively merge ``override`` onto a deep copy of ``base``."""
     out = copy.deepcopy(base)
@@ -198,12 +237,9 @@ def load_config(path: "str | Path | None" = None) -> Dict[str, Any]:
     if path is not None:
         with open(path, "r", encoding="utf-8") as fh:
             user_cfg = yaml.safe_load(fh) or {}
-        # Scene counts and condition lists are replaced, not merged, so a YAML
-        # file can restrict the set of scene types / conditions.
-        if "scenes" in user_cfg and "counts" in user_cfg["scenes"]:
-            cfg["scenes"]["counts"] = {}
-        if "conditions" in user_cfg and "items" in user_cfg["conditions"]:
-            cfg["conditions"]["items"] = []
+        for mapping in REPLACED_MAPPINGS:
+            if _lookup(user_cfg, mapping) is not None:
+                _clear(cfg, list(mapping))
         cfg = deep_merge(cfg, user_cfg)
     validate_config(cfg)
     return cfg
@@ -269,16 +305,32 @@ def expand_conditions(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
             raise ValueError(f"outlier_type must be one of {OUTLIER_TYPES}")
     if not items:
         raise ValueError("at least one noise condition is required")
+    names = [condition_name(it) for it in items]
+    # The condition name is a manifest column, the grouping key of the per-condition
+    # statistics and an export file name, so two conditions that round to the same
+    # name would be indistinguishable downstream.
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        raise ValueError(
+            "noise conditions must have distinct names (two decimals of sigma and outlier "
+            f"ratio); duplicated: {duplicates}"
+        )
     return items
 
 
 def validate_config(cfg: Dict[str, Any]) -> None:
     """Raise ``ValueError`` on inconsistent configurations."""
     ds = cfg["dataset"]
+    if any(float(v) < 0 for v in ds["splits"].values()):
+        raise ValueError("dataset.splits fractions must be >= 0")
     if abs(sum(ds["splits"].values()) - 1.0) > 1e-6:
         raise ValueError("dataset.splits fractions must sum to 1")
     if ds["compression"] not in ("gzip", "none"):
         raise ValueError("dataset.compression must be 'gzip' or 'none'")
+    if int(ds["max_scenes_per_file"]) < 1:
+        raise ValueError("dataset.max_scenes_per_file must be >= 1")
+    if not 0 <= int(ds["compression_level"]) <= 9:
+        raise ValueError("dataset.compression_level must be in [0, 9]")
 
     sc = cfg["scenes"]
     for name, count in sc["counts"].items():
@@ -292,6 +344,20 @@ def validate_config(cfg: Dict[str, Any]) -> None:
     if lo < 8 or hi < lo:
         raise ValueError("scenes.num_points must satisfy 8 <= lo <= hi")
     _check_probs("scenes.planar_layout_probs", sc["planar_layout_probs"], ("grid", "random"))
+    lo, hi = sc["scene_size"]
+    if not 0 < lo <= hi:
+        raise ValueError("scenes.scene_size must satisfy 0 < lo <= hi")
+    ds_cfg = sc["depth_stratified"]
+    z_lo, z_hi = ds_cfg["depth_range"]
+    if not 0 < z_lo <= z_hi:
+        raise ValueError("scenes.depth_stratified.depth_range must satisfy 0 < lo <= hi")
+    for angle in ds_cfg["cone_half_angles_deg"]:
+        # tan(phi) is used for the lateral offset, so a half-angle of 90 degrees or
+        # more would place points behind the corridor entrance.
+        if not 0 < float(angle) < 90:
+            raise ValueError("scenes.depth_stratified.cone_half_angles_deg must be within (0, 90)")
+    if not 0.0 <= float(ds_cfg["narrow_fraction"]) <= 1.0:
+        raise ValueError("scenes.depth_stratified.narrow_fraction must be in [0, 1]")
 
     cam = cfg["cameras"]
     _check_probs("cameras.model_probs", cam["model_probs"], CAMERA_MODELS)
@@ -299,6 +365,22 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         if model not in CAMERA_MODELS:
             raise ValueError(f"cameras.fov_class_probs: unknown model '{model}'")
         _check_probs(f"cameras.fov_class_probs.{model}", probs, cam["fov_classes"].keys())
+    # Every model that can actually be drawn needs its FOV classes and, unless it is
+    # the pinhole model, its distortion ranges; without this the failure is a
+    # KeyError from the middle of the generator instead of a configuration error.
+    for model, weight in cam["model_probs"].items():
+        if float(weight) <= 0:
+            continue
+        if model not in cam["fov_class_probs"]:
+            raise ValueError(f"cameras.fov_class_probs has no entry for '{model}', which model_probs can draw")
+        if model == PINHOLE_MODEL:
+            continue
+        ranges = cam["distortion_levels"].get(model)
+        if not isinstance(ranges, dict):
+            raise ValueError(f"cameras.distortion_levels has no entry for '{model}'")
+        for level, weight_level in cam["distortion_levels"]["probs"].items():
+            if float(weight_level) > 0 and level not in ranges:
+                raise ValueError(f"cameras.distortion_levels.{model} has no '{level}' entry")
     for name, spec in cam["fov_classes"].items():
         lo, hi = spec["hfov_deg"]
         if not (0 < lo <= hi < 180):
@@ -311,10 +393,34 @@ def validate_config(cfg: Dict[str, Any]) -> None:
     for res in cam["resolutions"]:
         if len(res) != 2 or res[0] <= 0 or res[1] <= 0:
             raise ValueError("cameras.resolutions entries must be [width, height] > 0")
+    if not cam["resolutions"]:
+        raise ValueError("cameras.resolutions must list at least one sensor size")
+    if float(cam["min_depth"]) < 0:
+        # project_points keeps points with z_c > min_depth; a negative threshold
+        # would admit points behind the camera, which project to the pixel of their
+        # mirror image and would be stored as valid ground truth.
+        raise ValueError("cameras.min_depth must be >= 0")
+    if int(cam["max_pose_attempts"]) < 1:
+        raise ValueError("cameras.max_pose_attempts must be >= 1")
+    if not 0.0 <= float(cam["principal_point_jitter"]) < 0.5:
+        raise ValueError("cameras.principal_point_jitter must be in [0, 0.5)")
+    if float(cam["aspect_jitter"]) < 0:
+        raise ValueError("cameras.aspect_jitter must be >= 0")
+    if not 0.0 < float(cam["min_valid_corner_fraction"]) <= 1.0:
+        raise ValueError("cameras.min_valid_corner_fraction must be in (0, 1]")
 
     po = cfg["poses"]
     if not (0 <= po["min_elevation_deg"] < 90):
         raise ValueError("poses.min_elevation_deg must be in [0, 90)")
+    f_lo, f_hi = po["fill_factor"]
+    if not 0 < f_lo <= f_hi:
+        raise ValueError("poses.fill_factor must satisfy 0 < lo <= hi")
+    if not 0 < float(po["max_half_fov_for_distance_deg"]) < 90:
+        raise ValueError("poses.max_half_fov_for_distance_deg must be within (0, 90)")
+    if float(po["min_distance_factor"]) <= 0:
+        raise ValueError("poses.min_distance_factor must be > 0")
+    if float(np.linalg.norm(po["up_vector"])) < 1e-9:
+        raise ValueError("poses.up_vector must not be the zero vector")
     expand_conditions(cfg)
 
 
@@ -322,11 +428,16 @@ def scene_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Enumerate every scene to generate as ``{"scene_id", "scene_type", "split",
     "index_in_type"}``.  Splits are assigned per scene type by contiguous index
-    ranges so that every split contains every scene type (deterministic).
+    ranges, deterministically; every split contains every scene type as long as a
+    type has at least as many scenes as there are splits with a non-zero fraction
+    (see :func:`allocate_counts`).
     """
     specs: List[Dict[str, Any]] = []
     fractions = cfg["dataset"]["splits"]
-    split_names = list(fractions.keys())
+    # Canonical order, so that two configurations listing the same splits in a
+    # different order produce the same assignment from the same master seed.
+    split_names = [n for n in SPLIT_ORDER if n in fractions]
+    split_names += sorted(n for n in fractions if n not in SPLIT_ORDER)
     scene_id = 0
     for scene_type in SCENE_TYPES:
         count = int(cfg["scenes"]["counts"].get(scene_type, 0))
