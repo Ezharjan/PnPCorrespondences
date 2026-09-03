@@ -22,8 +22,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", required=True, help="dataset directory to upload")
     parser.add_argument("--repo-id", required=True, help="dataset id on the Hub, e.g. Ezharjan/PnPCorrespondences")
-    parser.add_argument("--private", dest="private", action="store_true", default=True, help="private repository (default)")
-    parser.add_argument("--public", dest="private", action="store_false", help="public repository")
+    parser.add_argument("--private", dest="private", action="store_const", const=True, default=None,
+                        help="make the repository private (the default for a new repository)")
+    parser.add_argument("--public", dest="private", action="store_const", const=False,
+                        help="make the repository public, including one that already exists")
     parser.add_argument("--token", default=None, help="Hub token (default: HF_TOKEN env var or cached login)")
     parser.add_argument("--license", default="cc-by-4.0")
     parser.add_argument("--code-url", default="", help="link the generator source in the card (omit if the repository is private)")
@@ -43,8 +45,9 @@ def main() -> None:
         print("dataset card refreshed:", data / "README.md")
     files = sorted(p for p in data.rglob("*") if p.is_file())
     total = sum(p.stat().st_size for p in files)
+    visibility = "unchanged" if args.private is None else ("private" if args.private else "public")
     print(f"{len(files)} files, {total / 1e9:.3f} GB -> https://huggingface.co/datasets/{args.repo_id} "
-          f"({'private' if args.private else 'public'})")
+          f"(visibility: {visibility})")
     if args.dry_run:
         for p in files[:50]:
             print("  ", p.relative_to(data), f"{p.stat().st_size / 1e6:.2f} MB")

@@ -714,15 +714,17 @@ python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorres
 python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --private
 ```
 
-The script creates the repository if needed (`--private` by default; `--public` to publish immediately) and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits: keep individual files below 50 GB (shards are ≈ 300 MB with `max_scenes_per_file: 20`) and folders below 10 000 files.
+The script creates the repository if needed, private unless `--public` is given, and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits: keep individual files below 50 GB (shards are ≈ 300 MB with `max_scenes_per_file: 20`) and folders below 10 000 files.
 
 **Step 5 — verify.** Open `https://huggingface.co/datasets/Ezharjan/PnPCorrespondences`: the card is rendered, the *Dataset Viewer* shows the manifest table, and *Files* lists the HDF5 shards.
 
-**Step 6 — a citable identifier.** A public dataset on the Hub can be registered with DataCite from *Settings* → *DOI*, which returns an identifier of the form `10.57967/hf/…`. A DOI refers to the data as it stands at that moment, so it is worth minting only once the dataset is final; a later revision needs its own. Passing `--doi` to the upload command writes it into the published card:
+**Step 6 — publish.** `--public` sets the repository public, and applies to an existing repository as well as a new one. The script prints the visibility it reads back from the Hub after each run, so the state is never in doubt.
 
 ```bash
 python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --public --doi 10.57967/hf/xxxxx
 ```
+
+**Step 7 — a citable identifier.** A public dataset can be registered with DataCite from *Settings* → *DOI*, which returns an identifier of the form `10.57967/hf/…`. The repository has to be public first. A DOI refers to the data as it stands at that moment, so it is minted once the dataset is final; a later revision takes its own. `--doi` writes it into the published card, as above.
 
 **Loading from the Hub** (works on any machine):
 

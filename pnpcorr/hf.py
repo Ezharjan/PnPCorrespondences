@@ -201,13 +201,26 @@ The dataset is released under `{license_id}`. Copyright (c) 2026 {AUTHOR}.
     return front + body
 
 
-def upload_dataset(data_dir: "str | Path", repo_id: str, private: bool = True, token: Optional[str] = None,
-                   commit_message: str = "Upload dataset", large: bool = True, log=print) -> str:
-    """Create the dataset repository (if needed) and upload ``data_dir``."""
+def upload_dataset(data_dir: "str | Path", repo_id: str, private: Optional[bool] = None,
+                   token: Optional[str] = None, commit_message: str = "Upload dataset",
+                   large: bool = True, log=print) -> str:
+    """
+    Create the dataset repository (if needed) and upload ``data_dir``.
+
+    ``private`` is applied to an existing repository as well as to a new one.
+    ``create_repo`` ignores its ``private`` argument when the repository already
+    exists, so the visibility of an existing repository is set explicitly.
+    ``None`` creates a private repository and leaves an existing one untouched.
+    """
     from huggingface_hub import HfApi
 
     api = HfApi(token=token)
-    api.create_repo(repo_id=repo_id, repo_type="dataset", private=private, exist_ok=True)
+    api.create_repo(repo_id=repo_id, repo_type="dataset",
+                    private=True if private is None else private, exist_ok=True)
+    if private is not None:
+        api.update_repo_settings(repo_id=repo_id, repo_type="dataset", private=private)
+    info = api.repo_info(repo_id=repo_id, repo_type="dataset")
+    log(f"repository {repo_id} is {'private' if info.private else 'PUBLIC'}")
     data_dir = str(Path(data_dir))
     if large:
         log("uploading with upload_large_folder (resumable, multi-threaded) ...")
