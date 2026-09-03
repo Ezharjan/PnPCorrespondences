@@ -27,9 +27,8 @@ def build_dataset_card(data_dir: "str | Path", repo_id: str, license_id: str = "
     """
     Render the Hugging Face dataset card (README.md with YAML front matter).
 
-    ``code_url`` is linked as the generator's source when given; leave it empty
-    to publish a card that stands on its own.  ``doi`` is added to the front
-    matter and the citation once one has been minted for the dataset.
+    ``code_url``, when given, is linked as the generator's source. ``doi`` is
+    added to the citation.
     """
     data_dir = Path(data_dir)
     stats = load_stats(data_dir)
@@ -167,7 +166,7 @@ be regenerated bit-for-bit. Camera model conventions follow OpenCV
 (`cv2.projectPoints` / `cv2.fisheye.projectPoints`); projections agree with those
 functions to 1e-8 px.
 
-Design notes worth knowing when interpreting the data:
+Notes on the design, relevant when interpreting the data:
 
 - Distortion coefficients are sampled as the *effective* radial displacement at the
   image corner and converted to raw polynomial coefficients, so `mild` and `strong`

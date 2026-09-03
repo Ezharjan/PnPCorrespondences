@@ -115,7 +115,7 @@ def test_brown_domain_accounts_for_tangential_folding():
     r_out = np.linspace(valid * 1.001, valid * 1.2, 200)
     det_out = _brown_jacobian_det(r_out[:, None] * np.cos(th), r_out[:, None] * np.sin(th), coeffs)
     assert (det_out <= 0).any()
-    # the offending observation is now culled instead of silently mis-undistorted
+    # a point beyond the fold lies outside the domain and is therefore not projected
     K = np.array([[4556.62, 0.0, 1920.0], [0.0, 4556.62, 1080.0], [0.0, 0.0, 1.0]])
     intr = Intrinsics(BROWN_CONRADY, K, coeffs, 3840, 2160, valid_radius=valid)
     assert not in_valid_domain(np.array([-0.678467]), np.array([0.436572]), intr)[0]

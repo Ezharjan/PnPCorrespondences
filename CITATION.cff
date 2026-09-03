@@ -25,9 +25,7 @@ repository: "https://huggingface.co/datasets/Ezharjan/PnPCorrespondences"
 license: CC-BY-4.0
 version: 1.0.0
 date-released: "2026-09-03"
-# After minting a DOI on the Hugging Face dataset page (Settings -> DOI),
-# uncomment the line below and fill in the identifier it returns.
-# doi: "10.57967/hf/XXXXXXX"
+doi: "10.57967/hf/xxxxx"
 keywords:
   - camera calibration
   - perspective-n-point

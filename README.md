@@ -1,6 +1,6 @@
 # PnPCorrespondences
 
-**A large, systematic, image-free dataset of 2D–3D point correspondences with exact ground truth — built for benchmarking camera calibration, Perspective-n-Point (PnP) solvers, robust estimators and bundle adjustment.**
+**A large, systematic, image-free dataset of 2D–3D point correspondences with exact ground truth, for benchmarking camera calibration, Perspective-n-Point (PnP) solvers, robust estimators and bundle adjustment.**
 
 [![Dataset on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20dataset-Ezharjan%2FPnPCorrespondences-yellow)](https://huggingface.co/datasets/Ezharjan/PnPCorrespondences)
 [![License: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
@@ -9,7 +9,7 @@
 
 This repository contains everything needed to *generate* the dataset from scratch on a laptop, *validate* it, *benchmark* fifteen classical and modern solvers on it (from a from-scratch DLT to SQPnP and MAGSAC++), *analyse* the results, *visualise* dataset and results, and *publish* the dataset on the Hugging Face Hub.
 
-This document is self-contained: **Section 5** states the complete methodology — the forward projection model, the four generation steps and the design rules — and every later section documents the implementation that realises it. Reading Sections 1, 5 and 6 is enough to reproduce the dataset with your own code; Section 5.9 gives a sixty-line reference implementation of the core.
+The document is self-contained. Section 5 states the methodology in full: the forward projection model, the four generation steps and the design rules. Every later section documents the implementation that realises it. Sections 1, 5 and 6 are enough to reproduce the dataset with your own code, and Section 5.9 gives a sixty-line reference implementation of the core.
 
 <p align="center">
   <img src="docs/figures/dataset_scene_gallery.png" alt="Scene families" width="100%">
@@ -42,7 +42,7 @@ This document is self-contained: **Section 5** states the complete methodology �
 
 ## 1. Why this dataset
 
-Camera calibration is a foundational problem in 3D computer vision: it establishes the mathematical relationship between the 3D world and its 2D image projections. Calibration from images of checkerboard or ChArUco targets is the standard practice, but *evaluating* modern PnP solvers, bundle-adjustment algorithms and neural calibration networks needs something the standard practice cannot give — vast, precisely controlled data with unquestionable ground truth.
+Camera calibration is a foundational problem in 3D computer vision: it establishes the mathematical relationship between the 3D world and its 2D image projections. Calibration from images of checkerboard or ChArUco targets is the standard practice, but *evaluating* modern PnP solvers, bundle-adjustment algorithms and neural calibration networks needs something the standard practice cannot give: vast, precisely controlled data with unquestionable ground truth.
 
 Evaluating those methods on real images confounds many error sources at once: lighting, motion blur, corner-detector bias, mismatched features. A dataset built purely from 2D–3D point correspondences isolates them. Every sample here is a set of 3D world points, their 2D pixel observations, and the *exact* intrinsics, distortion and extrinsics that produced them, so that every deviation of an estimate is attributable to the solver and to a controlled, labelled perturbation:
 
@@ -61,7 +61,7 @@ Evaluating those methods on real images confounds many error sources at once: li
 
 The generator is deterministic: every array is a pure function of a master seed, so the full dataset can be regenerated bit-for-bit on any machine (the validator checks this).
 
-Because no raster data is involved, the dataset is also cheap: there are no images to decode, storage is roughly 19 bytes per correspondence, and a 300-million-correspondence release fits in about 6 GB. What it buys is absolute ground truth for probing the limits of calibration and pose-estimation algorithms — at the price of not modelling image formation itself (Section 17).
+Because no raster data is involved, the dataset is also cheap: there are no images to decode, storage is roughly 19 bytes per correspondence, and a 300-million-correspondence release fits in about 6 GB. What it buys is absolute ground truth for probing the limits of calibration and pose-estimation algorithms, at the price of not modelling image formation itself (Section 17).
 
 ## 2. Repository layout
 
@@ -112,7 +112,7 @@ PnPCorrespondences/
     └── small_tier_summary.md   the full benchmark summary quoted in Section 9.6
 ```
 
-Generated artefacts — `data/`, `results/`, `runs/` and a root-level `figures/` if you ask for one — are written next to the code and ignored by git. The ignore patterns are anchored to the repository root (`/data/`, `/results/`, …) precisely so that **`docs/figures/` stays tracked**: an unanchored `figures/` rule would match at any depth and silently drop the images the README renders on GitHub. Caches are ignored too and are removed by `python scripts/clean_caches.py` (Section 12); neither datasets nor `docs/` are ever deleted by a script.
+Generated artefacts (`data/`, `results/`, `runs/`, and a root-level `figures/` if you ask for one) are written next to the code and are not tracked by git. Caches are untracked too and are removed by `python scripts/clean_caches.py` (Section 12). No script deletes a dataset or anything under `docs/`.
 
 ## 3. Quick start
 
@@ -126,7 +126,7 @@ python scripts/run_pipeline.py --config configs/smoke.yaml --out-root runs/smoke
 python examples/quickstart.py --data runs/smoke/data
 ```
 
-The smoke pipeline generates a tiny dataset, validates it, exports JSON examples, runs every benchmark, writes the summary tables and figures and the dataset card — in about one minute. The full dataset is produced by the same command with `configs/full.yaml` (Section 8). Afterwards, `python scripts/clean_caches.py` removes every cache the run left behind and touches nothing else (Section 12).
+The smoke pipeline generates a tiny dataset, validates it, exports JSON examples, runs every benchmark, writes the summary tables and figures and the dataset card, all in about one minute. The full dataset is produced by the same command with `configs/full.yaml` (Section 8). Afterwards, `python scripts/clean_caches.py` removes every cache the run left behind and touches nothing else (Section 12).
 
 ## 4. Installation
 
@@ -158,11 +158,11 @@ pip install -r requirements.txt
 python -m pytest -q
 ```
 
-`requirements.txt` installs NumPy, SciPy, h5py, pandas + pyarrow (Parquet manifest), PyYAML, tqdm, OpenCV (`opencv-python`, solvers), matplotlib (figures), `huggingface_hub` (upload) and pytest. Both OpenCV 4.x and 5.x work — the fisheye calibration flags moved from `cv2.fisheye` to the top-level namespace in 5.0 and the code accepts either spelling; the test suite is run against both. OpenCV is optional for *generation*: the generator, the validator and the from-scratch solvers only need NumPy/SciPy. Optionally install the library in editable mode with `pip install -e .`; the scripts also work without installation because they add the repository root to `sys.path`. (If you already have the sources in another folder, skip the `git clone` line and `cd` there instead.)
+`requirements.txt` installs NumPy, SciPy, h5py, pandas + pyarrow (Parquet manifest), PyYAML, tqdm, OpenCV (`opencv-python`, solvers), matplotlib (figures), `huggingface_hub` (upload) and pytest. Both OpenCV 4.x and 5.x work. The fisheye calibration flags moved from `cv2.fisheye` to the top-level namespace in 5.0, and the code accepts either spelling; the test suite is run against both. OpenCV is optional for *generation*: the generator, the validator and the from-scratch solvers only need NumPy/SciPy. Optionally install the library in editable mode with `pip install -e .`; the scripts also work without installation because they add the repository root to `sys.path`. (If you already have the sources in another folder, skip the `git clone` line and `cd` there instead.)
 
 ## 5. Method and dataset design
 
-This section is the complete methodology. Generating synthetic correspondences means simulating the *forward* projection model of a camera rigorously — mapping a 3D point in the world to a 2D pixel — and then perturbing the result in controlled, labelled ways. Section 5.1 states the projection model; Sections 5.2 to 5.6 are the four generation steps in order (scene geometry → poses → projection and filtering → noise); Section 5.7 covers determinism, 5.8 the deliberately hard configurations and 5.9 a minimal reference implementation.
+This section is the complete methodology. Generating synthetic correspondences means simulating the *forward* projection model of a camera rigorously, mapping a 3D point in the world to a 2D pixel, and then perturbing the result in controlled, labelled ways. Section 5.1 states the projection model; Sections 5.2 to 5.6 are the four generation steps in order (scene geometry → poses → projection and filtering → noise); Section 5.7 covers determinism, 5.8 the deliberately hard configurations and 5.9 a minimal reference implementation.
 
 All quantities are in metres and pixels. Conventions are those of OpenCV; the projection code is verified against `cv2.projectPoints` and `cv2.fisheye.projectPoints` to 10⁻⁸ px in the test suite.
 
@@ -223,7 +223,7 @@ The aim is a diverse set of poses that actually look at the structure. A camera 
 
 Every scene receives several *intrinsic sets* (`intrinsics_id`), each reused for several poses (`pose_id`), which is what multi-view calibration benchmarks need. For each set: a camera model is drawn (pinhole 30 %, Brown–Conrady 45 %, Kannala–Brandt 25 %), then a FOV class allowed for that model, a nominal horizontal FOV inside the class range, a resolution, $f_x = \frac{W/2}{\tan(\text{HFOV}/2)}$ (pinhole / Brown–Conrady) or $f_x = \frac{W/2}{\text{HFOV}/2}$ (equidistant fisheye), $f_y = f_x(1 + \mathcal{N}(0, 0.01))$, a principal point within ±3 % of the image centre and, with probability 0.1, a skew of up to ±2 px.
 
-Distortion coefficients are sampled as *effective* coefficients — the relative radial displacement they induce at the image corner — and converted to raw polynomial coefficients, so that "mild" and "strong" mean the same thing for a 640 px webcam and a 4K wide-angle lens (`distortion_level`; telephoto lenses are always mild). Every polynomial is checked to be **injective** up to the image corner: `valid_radius` stores the largest undistorted radius (Brown–Conrady) or incidence angle (Kannala–Brandt) that still has a unique image, and points beyond it are never projected. For Brown–Conrady the bound is the first radius at which the Jacobian determinant of the *full* map vanishes in any direction — radial monotonicity alone is not enough, because the tangential terms $p_1, p_2$ fold the map earlier, and can fold it even where the radial part is monotonic everywhere.
+Distortion coefficients are sampled as *effective* coefficients, meaning the relative radial displacement they induce at the image corner, and are then converted to raw polynomial coefficients so that "mild" and "strong" mean the same thing for a 640 px webcam and a 4K wide-angle lens (`distortion_level`; telephoto lenses are always mild). Every polynomial is checked to be **injective** up to the image corner: `valid_radius` stores the largest undistorted radius (Brown–Conrady) or incidence angle (Kannala–Brandt) that still has a unique image, and points beyond it are never projected. For Brown–Conrady the bound is the first radius at which the Jacobian determinant of the *full* map vanishes in any direction. Radial monotonicity alone is not enough: the tangential terms $p_1, p_2$ fold the map earlier, and can fold it even where the radial part is monotonic everywhere.
 
 ### 5.5 Step 3 — forward projection and filtering
 
@@ -257,7 +257,7 @@ Noisy coordinates are not clipped to the image, so the noise statistics are exac
 
 ### 5.7 Splits, seeds and reproducibility
 
-Scenes are assigned to `train` / `val` / `test` (80 / 10 / 10 %) per scene type, so every split contains every family; the split is a scene attribute and a manifest column. Seeds derive from the master seed through `numpy.random.SeedSequence` spawn keys — `(scene_id, 0)` for the scene, `(scene_id, 3, intrinsics_id)` for intrinsics, `(scene_id, 1, camera_slot)` for poses and `(scene_id, 2, camera_slot, condition_id)` for noise — so generation with 1 or 16 worker processes yields identical files, and `validate_dataset.py --regenerate N` re-creates N scenes and compares them bit-for-bit.
+Scenes are assigned to `train` / `val` / `test` (80 / 10 / 10 %) per scene type, so every split contains every family; the split is a scene attribute and a manifest column. Seeds derive from the master seed through `numpy.random.SeedSequence` spawn keys: `(scene_id, 0)` for the scene, `(scene_id, 3, intrinsics_id)` for intrinsics, `(scene_id, 1, camera_slot)` for poses and `(scene_id, 2, camera_slot, condition_id)` for noise. Generation with 1 or 16 worker processes therefore yields identical files, and `validate_dataset.py --regenerate N` re-creates N scenes and compares them bit-for-bit.
 
 ### 5.8 Challenging configurations, by design
 
@@ -269,7 +269,7 @@ A benchmark is only as informative as its hard cases. Three are built into the d
 | **Small field of view** | Telephoto lenses show almost no perspective effect, which stresses the numerical stability of every solver and makes the principal point nearly unobservable for calibration. | The `narrow` FOV class spans 5–20° HFOV and is sampled for pinhole and Brown–Conrady cameras; Section 9.6 quantifies the resulting 50–85 px principal-point error in multi-view calibration. |
 | **Extreme outlier ratios** | Modern learned PnP solvers (for example graph-neural-network matchers) claim robustness to 80–90 % outliers, which is beyond what a 20 % benchmark can distinguish. | Outlier ratios span 0 %, 5 %, 20 %, 50 %, 80 % and 95 %, in three contamination modes, with the ground-truth `outlier_mask` stored for every sample so that inlier precision and recall are measurable, not just pose error. |
 
-The corresponding evaluation metrics — reprojection RMSE against the clean ground truth, rotation and translation error against the exact pose, and percentage error of $f_x, f_y, c_x, c_y$ — are defined in Section 9.3 and computed by `pnpcorr.metrics`.
+The corresponding evaluation metrics are defined in Section 9.3 and computed by `pnpcorr.metrics`: reprojection RMSE against the clean ground truth, rotation and translation error against the exact pose, and percentage error of $f_x, f_y, c_x, c_y$.
 
 ### 5.9 The method in sixty lines
 
@@ -465,7 +465,7 @@ Measured on the `small` tier (2 worker processes) and extrapolated linearly; tim
 | `full` | 400 | 19 200 | 288 000 | ≈ 3 × 10⁸ | ≈ 6 GB | ≈ 15–30 min |
 | `xl` | 1 000 | 80 000 | 1 200 000 | ≈ 1.3 × 10⁹ | ≈ 25 GB | ≈ 1–2 h |
 
-A sample costs about 19 bytes per correspondence with the default gzip level 1 — float64 coordinates barely compress, so `dataset.compression: none` trades ~12 % more space for ~30 % less generation wall time (measured on 3.9 M correspondences: 5.5 s / 73 MB with gzip, 3.8 s / 82 MB without). Scaling knobs: `scenes.counts`, `cameras.num_intrinsics_per_scene`, `cameras.num_poses_per_intrinsics`, `scenes.num_points` and the number of conditions (Section 14).
+A sample costs about 19 bytes per correspondence with the default gzip level 1. Float64 coordinates barely compress, so `dataset.compression: none` trades ~12 % more space for ~30 % less generation wall time (measured on 3.9 M correspondences: 5.5 s / 73 MB with gzip, 3.8 s / 82 MB without). Scaling knobs: `scenes.counts`, `cameras.num_intrinsics_per_scene`, `cameras.num_poses_per_intrinsics`, `scenes.num_points` and the number of conditions (Section 14).
 
 ## 8. Step by step: generating the dataset
 
@@ -497,7 +497,7 @@ python scripts/validate_dataset.py --data data                      # every came
 python scripts/validate_dataset.py --data data --max-cameras 2000 --regenerate 5   # a fast spot check
 ```
 
-The validator re-projects the stored ground truth for every camera and compares it with `points_2d_clean`, `point_indices` and `depths` (10⁻⁹ px), verifies rotations, camera centres, `K` structure and the FOV/focal relation, checks bounds and depths, counts outliers, bounds the largest inlier deviation with a sample-size-aware Gaussian tail bound (`√(2 ln(N/10⁻⁹))` σ — a fixed 6σ limit would fail by construction on a dataset with 10⁸ correspondences) and tests the inlier noise RMS against σ within eight standard errors, checks quantization (including the σ > 0 case, where the expected residual RMS is $\sqrt{\sigma^2 + 1/12}$), checks that the inlier noise is zero-mean, that outliers are displaced far beyond the noise scale, that every swapped observation matches some selected point's clean projection and that uniform outliers lie inside the image, checks planarity labels and that pinhole cameras carry zero distortion coefficients, re-derives **every** manifest column from the HDF5 groups and compares it, cross-checks `dataset_stats.json` against the manifest, and regenerates `--regenerate` random scenes to compare them bit-for-bit. A `small`-tier dataset runs about 234 000 checks. It writes `data/metadata/validation_report.json` and exits with status 1 on any failure.
+The validator re-projects the stored ground truth for every camera and compares it with `points_2d_clean`, `point_indices` and `depths` (10⁻⁹ px), verifies rotations, camera centres, `K` structure and the FOV/focal relation, checks bounds and depths, counts outliers, bounds the largest inlier deviation with a sample-size-aware Gaussian tail bound (`√(2 ln(N/10⁻⁹))` σ, since the largest of N normal deviates grows with N) and tests the inlier noise RMS against σ within eight standard errors, checks quantization (including the σ > 0 case, where the expected residual RMS is $\sqrt{\sigma^2 + 1/12}$), checks that the inlier noise is zero-mean, that outliers are displaced far beyond the noise scale, that every swapped observation matches some selected point's clean projection and that uniform outliers lie inside the image, checks planarity labels and that pinhole cameras carry zero distortion coefficients, re-derives **every** manifest column from the HDF5 groups and compares it, cross-checks `dataset_stats.json` against the manifest, and regenerates `--regenerate` random scenes to compare them bit-for-bit. A `small`-tier dataset runs about 234 000 checks. It writes `data/metadata/validation_report.json` and exits with status 1 on any failure.
 
 ### 8.4 Export human-readable examples
 
@@ -507,7 +507,7 @@ python scripts/export_examples.py --data data            # -> data/examples/*.js
 
 ### 8.5 Custom designs
 
-Copy a configuration and edit it — the YAML files override the documented defaults in `pnpcorr/config.py` (Section 14). Examples: a pinhole-only dataset (`cameras.model_probs: {pinhole: 1.0}`), only planar targets (`scenes.counts` with a single entry), a 42-condition factorial design (`configs/factorial.yaml`), integer-only sensors (`quantize: true` everywhere), or 95 % outliers at every noise level.
+Copy a configuration and edit it. The YAML files override the documented defaults in `pnpcorr/config.py` (Section 14). Examples: a pinhole-only dataset (`cameras.model_probs: {pinhole: 1.0}`), only planar targets (`scenes.counts` with a single entry), a 42-condition factorial design (`configs/factorial.yaml`), integer-only sensors (`quantize: true` everywhere), or 95 % outliers at every noise level.
 
 ## 9. Benchmarks, evaluation and analysis
 
@@ -600,16 +600,16 @@ writes `results/tables/*.csv` + `*.md` and the combined `results/summary.md` / `
 
 ### 9.6 What the `small` tier shows
 
-The numbers below are taken from `results/summary.md` of a `small` run — 600 stratified PnP samples with all visible correspondences, 120 samples for the sweep, 600 single-view calibrations, 30 multi-view rigs, OpenCV 4.13; a copy of that summary is kept in [`docs/small_tier_summary.md`](docs/small_tier_summary.md). They are indicative — the `full` tier gives far tighter statistics — but the qualitative picture is stable:
+The numbers below come from `results/summary.md` of a `small` run: 600 stratified PnP samples with all visible correspondences, 120 samples for the sweep, 600 single-view calibrations, 30 multi-view rigs, OpenCV 4.13. A copy of that summary is kept in [`docs/small_tier_summary.md`](docs/small_tier_summary.md). The `full` tier gives far tighter statistics, but the qualitative picture is stable:
 
 * **Exact observations.** Every non-robust solver and every LM-refined solver recovers the pose to 10⁻¹²–10⁻¹⁵ deg (DLT + LM 8 × 10⁻¹⁵ deg, SQPnP 1 × 10⁻¹² deg). OpenCV's RANSAC variants without refinement stop at 3 × 10⁻⁷ deg and MAGSAC++ at 3 × 10⁻⁵ deg, because their final estimate is not polished.
 * **Noise.** Errors grow linearly with σ: with σ = 2 px and ≈ 1 000 points the median rotation error of the LM-refined solvers is ≈ 0.03 deg (DLT + LM 0.031, EPnP + LM 0.032, iterative 0.030, SQPnP 0.032); the linear DLT alone is nearly three times worse (0.082). Integer-pixel quantization without noise costs 0.004–0.007 deg for every solver except the linear DLT (0.013), the same as σ ≈ 0.3 px, as expected from the 0.289 px standard deviation of rounding.
-* **Outliers.** Non-robust solvers keep 0–60 % success at 5 % outliers and ≈ 0 % from 20 % on — that is what the outlier conditions measure. The from-scratch `ransac_p3p` (3-point hypotheses, LM re-fit) and MAGSAC++ keep 100 % success up to 80 % outliers and fall to 24 % and 29 % at 95 %, where 2 000 iterations are no longer enough (at 5 % inliers the expected number of 3-point samples for one all-inlier draw is 8 000). `cv_ransac_epnp` draws 5-point samples and already drops to 46 % at 80 % outliers, `cv_ransac_ap3p` (4-point samples) to 93 % — exactly the (1 − ε)ᵐ ordering. Swapped and uniform outliers are equally hard for every robust solver.
+* **Outliers.** Non-robust solvers keep 0–60 % success at 5 % outliers and ≈ 0 % from 20 % on, which is what the outlier conditions are there to measure. The from-scratch `ransac_p3p` (3-point hypotheses, LM re-fit) and MAGSAC++ keep 100 % success up to 80 % outliers and fall to 24 % and 29 % at 95 %, where 2 000 iterations are no longer enough (at 5 % inliers the expected number of 3-point samples for one all-inlier draw is 8 000). `cv_ransac_epnp` draws 5-point samples and already drops to 46 % at 80 % outliers, `cv_ransac_ap3p` (4-point samples) to 93 %, exactly the (1 − ε)ᵐ ordering. Swapped and uniform outliers are equally hard for every robust solver.
 * **Planar scenes.** The DLT variants are reported as *degenerate* on every `planar_single` sample (118 of 600 solves) and IPPE, SQPnP and the iterative solver handle planes without any loss (0.011 deg median over the outlier-free conditions). OpenCV's EPnP, however, is numerically unreliable on coplanar points (54 % success on outlier-free planar samples, 0.19 deg median), and because `solvePnPRansac` always re-estimates the final pose with EPnP, all three `cv_ransac_*` variants inherit that weakness on planar scenes (0.14–0.36 deg median versus 0.004–0.019 deg on the other scene types) while `ransac_p3p` (0.007 deg) and MAGSAC++ (0.009 deg) do not.
 * **Few points.** With n = 4, SQPnP succeeds on 94 % of the subsets (0.15 deg median), the minimal P3P / AP3P solvers on 86 % (0.39 deg), IPPE on 67 % (0.67 deg); EPnP is not a minimal solver and reaches only 41 % (7.3 deg). From n ≈ 8 on, all LM-refined solvers converge to the same accuracy.
 * **Fields of view.** For calibrated PnP the FOV barely matters to any solver but the linear DLT (0.003–0.017 deg medians in every class, IPPE on planes up to 0.022 at wide FOV); only the DLT degrades on telephoto views (0.048 deg versus 0.015 deg at normal FOV). For anything that estimates intrinsics, narrow fields of view are the ill-conditioned case: the principal point becomes nearly unobservable and multi-view calibration returns principal-point errors of 50–85 px on telephoto rigs (both OpenCV and the bundle adjustment) although the reprojection error stays small.
-* **Calibration.** The single-view DLT recovers the intrinsics of pinhole cameras to 0.04 % focal error, and shows the expected systematic bias on distorted cameras (1 % for Brown–Conrady, 5 % for Kannala–Brandt, 8.5 % for the fisheye class) because it has no distortion model. In multi-view calibration the from-scratch bundle adjustment matches OpenCV's `calibrateCamera` to the fourth digit on Brown–Conrady rigs (0.0069 % focal error for both) and on pinhole rigs (0.0185 % for both — they solve the identical problem, since `calibrateCamera` always fits the five Brown–Conrady coefficients and the benchmark asks the bundle adjustment for the same model) and, unlike `cv2.fisheye.calibrate` — whose extrinsic initialisation assumes a planar target — converges on non-planar Kannala–Brandt rigs (0.03 % versus 6.5 % focal error, 100 % versus 40 % success).
-* **Runtime** (≈ 1 000 correspondences, medians of that run — absolute values scale with the CPU, the *ratios* do not): SQPnP 0.9 ms, EPnP 1.4 ms, DLT 1.9 ms, LM-refined solvers ≈ 10 ms, OpenCV RANSAC / MAGSAC++ 8–18 ms, the from-scratch RANSACs 25–55 ms (pure Python loop).
+* **Calibration.** The single-view DLT recovers the intrinsics of pinhole cameras to 0.04 % focal error, and shows the expected systematic bias on distorted cameras (1 % for Brown–Conrady, 5 % for Kannala–Brandt, 8.5 % for the fisheye class) because it has no distortion model. In multi-view calibration the from-scratch bundle adjustment matches OpenCV's `calibrateCamera` to the fourth digit on Brown–Conrady rigs (0.0069 % focal error for both) and on pinhole rigs (0.0185 % for both, since they solve the identical problem: `calibrateCamera` always fits the five Brown–Conrady coefficients, and the benchmark asks the bundle adjustment for the same model). Unlike `cv2.fisheye.calibrate`, whose extrinsic initialisation assumes a planar target, it also converges on non-planar Kannala–Brandt rigs (0.03 % versus 6.5 % focal error, 100 % versus 40 % success).
+* **Runtime** (≈ 1 000 correspondences, medians of that run; absolute values scale with the CPU, the *ratios* do not): SQPnP 0.9 ms, EPnP 1.4 ms, DLT 1.9 ms, LM-refined solvers ≈ 10 ms, OpenCV RANSAC / MAGSAC++ 8–18 ms, the from-scratch RANSACs 25–55 ms (pure Python loop).
 
 ## 10. Visualisations
 
@@ -617,7 +617,7 @@ The numbers below are taken from `results/summary.md` of a `small` run — 600 s
 python scripts/make_figures.py --data data --results results
 ```
 
-Figures go to `docs/figures/` by default — the directory the table below links and the images further down embed — so regenerating them makes this README render *your* run. Pass `--out DIR` to write them elsewhere, `--dataset-only` / `--benchmark-only` to draw one half.
+Figures go to `docs/figures/` by default, the directory the table below links and the images further down embed, so regenerating them makes this document render your own run. Pass `--out DIR` to write them elsewhere, or `--dataset-only` / `--benchmark-only` to draw one half.
 
 | figure | content |
 |---|---|
@@ -669,18 +669,18 @@ python scripts/clean_caches.py --all         # also .cache/huggingface (resumabl
 python scripts/clean_caches.py --root runs   # clean another directory tree
 ```
 
-**The generated data is deliberately *not* a cache.** `data/`, `runs/` and `results/` are never deleted by any script — regenerating a `full` tier costs half an hour, so removing it must be a conscious act. Delete a dataset by hand when you want to rebuild it:
+**The generated data is deliberately *not* a cache.** `data/`, `runs/` and `results/` are never deleted by any script. Regenerating a `full` tier costs half an hour, so removing it is left as a deliberate act. Delete a dataset by hand when you want to rebuild it:
 
 ```bash
 rm -rf data results                        # Linux / macOS
 Remove-Item -Recurse -Force data, results  # Windows PowerShell
 ```
 
-Leave `docs/figures/` alone: it is committed documentation, not an artefact. `make_figures.py` overwrites those PNGs in place, so `git checkout -- docs/figures` restores the reference set if you want it back.
+`docs/figures/` is part of the documentation rather than a generated artefact, and `make_figures.py` writes over it. Pass `--out DIR` (or `--figures DIR` to the pipeline) to send a new set somewhere else and keep the figures this document shows.
 
 or let the generator replace it in place with `python scripts/generate_dataset.py --config configs/full.yaml --out data --overwrite`, which clears `hdf5/`, `metadata/`, `examples/`, `manifest.*` and `README.md` inside `--out` and writes a fresh dataset. `--overwrite` is also what `run_pipeline.py` uses, so re-running the pipeline never mixes two generations.
 
-Disk-space notes: the HDF5 shards dominate (Section 7); benchmark results are a few MB of CSV; figures a few MB of PNG. During an upload, `huggingface_hub` writes its resumable state into `data/.cache/huggingface/` — that directory is not uploaded and is safe to delete once the upload has finished (`--all` above).
+Disk-space notes: the HDF5 shards dominate (Section 7); benchmark results are a few MB of CSV; figures a few MB of PNG. During an upload, `huggingface_hub` writes its resumable state into `data/.cache/huggingface/`. That directory is not uploaded, and is safe to delete once the upload has finished (`--all` above).
 
 ## 13. Uploading the dataset to Hugging Face
 
@@ -700,12 +700,12 @@ hf auth login            # huggingface_hub >= 0.34; older versions: huggingface-
 python scripts/build_dataset_card.py --data data --repo-id Ezharjan/PnPCorrespondences --license cc-by-4.0
 ```
 
-The card stands on its own: it cites the Hub dataset and links no source repository. Two optional flags, accepted by both `build_dataset_card.py` and `upload_to_huggingface.py`:
+The card is self-contained: it cites the Hub dataset and describes the method without depending on any other repository. Two further options are accepted by both `build_dataset_card.py` and `upload_to_huggingface.py`:
 
-* `--code-url URL` links the generator's source from the card. Use it only if that repository is publicly reachable; omit it and the card simply describes the method.
-* `--doi 10.57967/hf/…` adds the DOI to the citation, once one has been minted (Step 6).
+* `--code-url URL` links the generator's source from the card.
+* `--doi 10.57967/hf/xxxxx` writes the DOI into the card's citation.
 
-Edit the generated `data/README.md` freely (notes, acknowledgements); the upload script regenerates it unless you pass `--no-card`. Pick the license that suits you (`cc-by-4.0`, `cc0-1.0`, `mit`, `odc-by`, …); the value must be one of the Hub's license identifiers, and it should match `license:` in `CITATION.cff`.
+The upload script regenerates the card unless `--no-card` is passed, so lasting edits belong in `pnpcorr/hf.py`. The license may be any identifier the Hub recognises: `cc-by-4.0`, `cc0-1.0`, `mit`, `odc-by`, and so on.
 
 **Step 4 — dry run, then upload:**
 
@@ -714,18 +714,14 @@ python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorres
 python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --private
 ```
 
-The script creates the repository if needed (`--private` by default; `--public` to publish immediately) and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits worth knowing: keep individual files below 50 GB (shards are ≈ 300 MB with `max_scenes_per_file: 20`) and folders below 10 000 files.
+The script creates the repository if needed (`--private` by default; `--public` to publish immediately) and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits: keep individual files below 50 GB (shards are ≈ 300 MB with `max_scenes_per_file: 20`) and folders below 10 000 files.
 
-**Step 5 — verify.** Open `https://huggingface.co/datasets/Ezharjan/PnPCorrespondences`: the card is rendered, the *Dataset Viewer* shows the manifest table, and *Files* lists the HDF5 shards. Switch the repository to public in Settings when ready.
+**Step 5 — verify.** Open `https://huggingface.co/datasets/Ezharjan/PnPCorrespondences`: the card is rendered, the *Dataset Viewer* shows the manifest table, and *Files* lists the HDF5 shards.
 
-**Step 6 — mint a DOI.** On the dataset page, *Settings* → *DOI* → *Generate DOI*. The Hub registers the dataset with DataCite and returns an identifier of the form `10.57967/hf/…`. The repository must be **public** first, and the DOI pins the dataset as it stands, so mint it only once the data is final; publishing further versions later requires a new DOI. Then propagate it:
+**Step 6 — a citable identifier.** A public dataset on the Hub can be registered with DataCite from *Settings* → *DOI*, which returns an identifier of the form `10.57967/hf/…`. A DOI refers to the data as it stands at that moment, so it is worth minting only once the dataset is final; a later revision needs its own. Passing `--doi` to the upload command writes it into the published card:
 
 ```bash
-# 1. uncomment and fill the doi: line in CITATION.cff
-# 2. add  doi = {10.57967/hf/...}  to the BibTeX entry in Section 18
-# 3. rebuild and re-upload the card so it carries the DOI too
-python scripts/build_dataset_card.py --data data --repo-id Ezharjan/PnPCorrespondences --doi 10.57967/hf/XXXXXXX
-python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --public --doi 10.57967/hf/XXXXXXX
+python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --public --doi 10.57967/hf/xxxxx
 ```
 
 **Loading from the Hub** (works on any machine):
@@ -737,7 +733,7 @@ root = snapshot_download("Ezharjan/PnPCorrespondences", repo_type="dataset",
                          allow_patterns=["manifest.parquet", "hdf5/planar_single_*"])   # a subset
 ```
 
-then read it exactly as in Section 6.4 with `root` in place of `data`. **Updating** a published dataset is the same upload command again — only changed files are transferred, and every upload is a versioned commit on the Hub.
+then read it exactly as in Section 6.4 with `root` in place of `data`. **Updating** a published dataset is the same upload command again: only changed files are transferred, and every upload is a versioned commit on the Hub.
 
 ## 14. Configuration reference
 
@@ -791,14 +787,13 @@ All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML file
 | `__pycache__`, `.pytest_cache`, `*.egg-info` clutter the tree | `python scripts/clean_caches.py` (Section 12); it never touches `data/`, `results/` or `docs/` |
 | the dataset is still there after `clean_caches.py` | by design - delete `data/` by hand or regenerate with `--overwrite` (Section 12) |
 | OpenCV 5 is installed | supported; the fisheye calibration flags moved namespace in 5.0 and the code accepts both spellings |
-| README images are missing on GitHub | `docs/figures/` must be committed - check with `git ls-files docs/figures` (expect 13 files). `git check-ignore -q docs/figures/pnp_runtime.png; echo $?` prints 1 when the file is *not* ignored; note that `check-ignore -v` also prints negated rules, so "it printed something" does not mean ignored |
 
 ## 17. Design decisions and known limitations
 
 * **Effective distortion coefficients.** Raw Brown–Conrady coefficients are meaningless without the field of view; the generator therefore samples the displacement at the image corner and derives the raw coefficients, and restricts each polynomial to its injective domain so that every stored observation has a unique pre-image. For Brown–Conrady that domain is bounded by the first zero of the full 2-D Jacobian determinant rather than by radial monotonicity: with tangential terms present the two differ, and beyond the fold a distorted position has two pre-images that both satisfy the forward model exactly, so no inverse solver can separate them. Real lenses with visible folding outside the sensor are covered because the domain must only cover 80 % of the corner radius.
 * **Nominal field of view.** `hfov_deg` is the FOV of the *undistorted* model ($f_x$ follows from it exactly); the effective FOV of a distorted lens differs slightly.
 * **Undistortion for calibrated PnP.** Observations are mapped to the equivalent pinhole image with the exact inverse of the ground-truth distortion (bisection + Newton, 10⁻⁹ accuracy) so that every solver sees the same problem. Random outliers that fall outside the invertible domain keep their raw coordinates (they are outliers anyway); the benchmark reports how many per solve in the `num_noninvertible` column.
-* **Planar inputs to OpenCV.** Coplanar points are expressed in their own plane frame ($z = 0$ exactly) before calling OpenCV, so that the result does not depend on the arbitrary orientation of the world frame. A planar target in a rotated world frame is coplanar only to floating-point rounding, and OpenCV's EPnP amplifies that $10^{-16}$ third dimension badly once observations carry noise: on tilted planes at σ = 0.5 px it gives a 20° median error in the rotated frame versus 0.23° for the same target expressed at $z = \text{const}$. The canonical frame reproduces the axis-aligned result at every noise level, so the benchmark measures the solver rather than the frame it was handed. The transform is exact, is applied to every OpenCV solver uniformly and never selectively, and EPnP's ~47 % failure rate on planar targets survives it — that failure rate is a property of OpenCV's implementation, not of this preprocessing.
+* **Planar inputs to OpenCV.** Coplanar points are expressed in their own plane frame ($z = 0$ exactly) before calling OpenCV, so that the result does not depend on the arbitrary orientation of the world frame. A planar target in a rotated world frame is coplanar only to floating-point rounding, and OpenCV's EPnP amplifies that $10^{-16}$ third dimension badly once observations carry noise: on tilted planes at σ = 0.5 px it gives a 20° median error in the rotated frame versus 0.23° for the same target expressed at $z = \text{const}$. The canonical frame reproduces the axis-aligned result at every noise level, so the benchmark measures the solver rather than the frame it was handed. The transform is exact, is applied to every OpenCV solver uniformly and never selectively, and EPnP's ~47 % failure rate on planar targets survives it, and is a property of OpenCV's implementation rather than of this preprocessing.
 * **No occlusion, no image formation.** By design, every point in the frustum is visible (walls do not occlude). Feature-detector effects are modelled only through Gaussian noise, quantization and outliers.
 * **Translation error normalisation.** The relative translation error divides by the mean depth of the inlier points rather than by $\lVert\mathbf{t}\rVert$, which is ill-defined for cameras close to the world origin (depth-stratified scenes).
 * **Learned solvers** are out of scope for the shipped benchmark (no weights, no framework dependency); the splits make them straightforward to add.
@@ -807,13 +802,13 @@ All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML file
 
 ### License
 
-The generator — everything in this repository — is released under the **MIT License**, Copyright © 2026 Aizierjiang Aiersilan. The full text is in [`LICENSE`](LICENSE).
+The generator, meaning everything in this repository, is released under the **MIT License**, Copyright © 2026 Aizierjiang Aiersilan. The full text is in [`LICENSE`](LICENSE).
 
-The *dataset* carries its own license, chosen when the card is built (`--license`, `cc-by-4.0` by default). Any identifier the Hugging Face Hub recognises works: `cc-by-4.0`, `cc0-1.0`, `mit`, `odc-by`, and so on. If you change it, change `license:` in [`CITATION.cff`](CITATION.cff) to the matching SPDX identifier as well.
+The **dataset** is released under **CC BY 4.0**. Regenerating it and publishing under a different license is a matter of passing `--license` when the card is built.
 
 ### Citation
 
-The citable artefact is the published dataset. [`CITATION.cff`](CITATION.cff) records the metadata in machine-readable form and is read by Zenodo, GitHub and most reference managers.
+The citable artefact is the published dataset, DOI [`10.57967/hf/xxxxx`](https://doi.org/10.57967/hf/xxxxx). [`CITATION.cff`](CITATION.cff) carries the same metadata in machine-readable form for Zenodo, GitHub and reference managers.
 
 ```bibtex
 @misc{PnPCorrespondences,
@@ -822,10 +817,9 @@ The citable artefact is the published dataset. [`CITATION.cff`](CITATION.cff) re
   author       = {Aizierjiang Aiersilan},
   year         = {2026},
   publisher    = {Hugging Face},
+  doi          = {10.57967/hf/xxxxx},
   url          = {https://huggingface.co/datasets/Ezharjan/PnPCorrespondences}
 }
 ```
 
-Once a DOI has been minted for the dataset (Hugging Face → dataset page → *Settings* → *DOI*), add it to the entry as `doi = {…}`, uncomment the `doi:` line in `CITATION.cff`, and pass `--doi` to `build_dataset_card.py` so the published card carries it too.
-
-When reporting results, state the `master_seed` and the configuration tier as well: together they identify the exact data, which can then be regenerated bit-for-bit. Solver references are listed in Section 9.2.
+Results reported against this dataset are easiest to reproduce when the `master_seed` and the configuration tier are quoted alongside them: the two together identify the data exactly. Solver references are listed in Section 9.2.
