@@ -63,7 +63,7 @@ def test_planar_degeneracy_is_detected_and_planar_solvers_work():
 
 
 def test_ippe_on_axis_aligned_offset_plane():
-    """The case where OpenCV's own canonicalisation fails."""
+    """A plane at z = const is already canonical; the transform must be a no-op for IPPE."""
     if not solvers.HAVE_CV2:
         pytest.skip("opencv missing")
     rng = np.random.default_rng(5)

@@ -38,6 +38,7 @@ NUM_COEFFS = {PINHOLE: 5, BROWN_CONRADY: 5, KANNALA_BRANDT: 4}
 
 _EPS = 1e-12
 _MAX_RADIUS_SCAN = 50.0  # normalized radius beyond which no image point is ever considered
+_MAX_DOMAIN_RADIUS = 10.0  # cap for the Brown-Conrady injectivity search (84 deg off axis)
 
 
 # ----------------------------------------------------------------------------
@@ -160,15 +161,74 @@ def _smallest_positive_root(poly_desc: np.ndarray) -> float:
     return float(real.min()) if real.size else float("inf")
 
 
-def brown_valid_radius(coeffs: np.ndarray) -> float:
+def brown_radial_valid_radius(coeffs: np.ndarray) -> float:
     """
-    Largest undistorted normalized radius ``r`` up to which the radial function
+    Largest radius up to which the *radial* function
     ``r_d(r) = r (1 + k1 r^2 + k2 r^4 + k3 r^6)`` is strictly increasing, i.e. the
     first positive root of ``1 + 3 k1 r^2 + 5 k2 r^4 + 7 k3 r^6``.
+
+    This bounds the domain only when the tangential coefficients vanish; use
+    :func:`brown_valid_radius` for the full model.
     """
     k1, k2, k3 = float(coeffs[0]), float(coeffs[1]), float(coeffs[4])
     s = _smallest_positive_root([7.0 * k3, 5.0 * k2, 3.0 * k1, 1.0])  # polynomial in s = r^2
     return math.sqrt(s) if math.isfinite(s) else float("inf")
+
+
+def _brown_jacobian_det(x: np.ndarray, y: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
+    """Determinant of the Jacobian of the full Brown-Conrady map at ``(x, y)``."""
+    k1, k2, p1, p2, k3 = (float(c) for c in coeffs[:5])
+    r2 = x * x + y * y
+    g = _brown_radial(r2, k1, k2, k3)
+    gp = k1 + 2.0 * k2 * r2 + 3.0 * k3 * r2 * r2      # d g / d(r^2)
+    a = g + 2.0 * gp * x * x + 2.0 * p1 * y + 6.0 * p2 * x
+    b = 2.0 * gp * x * y + 2.0 * p1 * x + 2.0 * p2 * y
+    d = g + 2.0 * gp * y * y + 6.0 * p1 * y + 2.0 * p2 * x
+    return a * d - b * b                              # the off-diagonal terms are equal
+
+
+def brown_valid_radius(coeffs: np.ndarray, num_directions: int = 128, num_steps: int = 256,
+                       max_radius: float = _MAX_DOMAIN_RADIUS) -> float:
+    """
+    Largest undistorted normalized radius ``r`` up to which the **full**
+    Brown-Conrady map (radial *and* tangential) is locally injective, i.e. its
+    Jacobian determinant stays positive in every direction.
+
+    The radial monotonicity limit alone is not sufficient: the tangential terms
+    ``p1``, ``p2`` fold the map at strictly smaller radii, and they can fold it
+    even when the radial part is monotonic everywhere (where the radial limit is
+    infinite).  Admitting those points would give distorted observations two
+    pre-images, so ``undistort_points`` could return the wrong one - silently, and
+    with its ``ok`` flag set, because the wrong branch is a genuine root.
+
+    The search is a direction scan plus a bisection; it is exact (and cheap) when
+    ``p1 == p2 == 0``, where the map is purely radial.
+    """
+    coeffs = np.asarray(coeffs, dtype=np.float64)
+    radial = brown_radial_valid_radius(coeffs)
+    if float(coeffs[2]) == 0.0 and float(coeffs[3]) == 0.0:
+        return radial                                  # purely radial: the limit is exact
+    upper = min(radial, float(max_radius))
+    theta = np.linspace(0.0, 2.0 * math.pi, int(num_directions), endpoint=False)
+    cos_t, sin_t = np.cos(theta), np.sin(theta)
+
+    def folds_at(r: float) -> bool:
+        return bool((_brown_jacobian_det(r * cos_t, r * sin_t, coeffs) <= 0.0).any())
+
+    radii = np.linspace(upper / int(num_steps), upper, int(num_steps))
+    det = _brown_jacobian_det(radii[:, None] * cos_t[None, :], radii[:, None] * sin_t[None, :], coeffs)
+    bad = np.flatnonzero((det <= 0.0).any(axis=1))
+    if bad.size == 0:
+        return upper                                   # monotonic over the whole search range
+    hi = float(radii[bad[0]])
+    lo = 0.0 if bad[0] == 0 else float(radii[bad[0] - 1])
+    for _ in range(60):                                # bisect down to machine precision
+        mid = 0.5 * (lo + hi)
+        if folds_at(mid):
+            hi = mid
+        else:
+            lo = mid
+    return lo
 
 
 def kb_valid_theta(coeffs: np.ndarray) -> float:

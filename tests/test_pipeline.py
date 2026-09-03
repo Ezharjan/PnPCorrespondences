@@ -1,4 +1,5 @@
 """End-to-end smoke test of the library API: generate -> validate -> benchmark -> analyse -> card."""
+import pandas as pd
 import pytest
 
 from pnpcorr.analysis import summarize_calibration, summarize_pnp, write_summary
@@ -39,7 +40,6 @@ def test_validation_detects_corrupted_observations(dataset, tmp_path):
     import shutil
 
     import h5py
-    import numpy as np
 
     corrupted = tmp_path / "corrupted"
     shutil.copytree(dataset, corrupted)
@@ -53,6 +53,47 @@ def test_validation_detects_corrupted_observations(dataset, tmp_path):
     report = validate_dataset(corrupted, regenerate=0, progress=False, log=None)
     assert not report["passed"]
     assert any("noise" in failure or "quantiz" in failure for failure in report["failures"])
+
+
+@pytest.mark.parametrize("attack", ["reset_outliers", "manifest_fx", "pinhole_coeffs"])
+def test_validation_detects_metadata_corruption(dataset, tmp_path, attack):
+    """Regression: these three all passed validation before the checks were hardened."""
+    import shutil
+
+    import h5py
+    import pandas as pd
+
+    root = tmp_path / attack
+    shutil.copytree(dataset, root)
+    shard = sorted((root / "hdf5").glob("*.h5"))[0]
+    if attack == "manifest_fx":
+        m = pd.read_parquet(root / "manifest.parquet")
+        m.loc[0, "fx"] = 9999.0
+        m.to_parquet(root / "manifest.parquet", index=False)
+        m.to_csv(root / "manifest.csv", index=False)
+    else:
+        with h5py.File(shard, "r+") as fh:
+            scene = fh[sorted(k for k in fh if k.startswith("scene_"))[0]]
+            cam = scene[sorted(k for k in scene if k.startswith("camera_"))[0]]
+            if attack == "pinhole_coeffs":
+                if str(cam.attrs["distortion_model"]) != "pinhole":
+                    pytest.skip("first camera is not pinhole in this dataset")
+                coeffs = cam["dist_coeffs"][()]
+                coeffs[0] = 0.01
+                cam["dist_coeffs"][...] = coeffs
+            else:
+                clean = cam["points_2d_clean"][()]
+                for name in cam:
+                    if name.startswith("condition_") and cam[name]["outlier_mask"][()].any():
+                        mask = cam[name]["outlier_mask"][()].astype(bool)
+                        uv = cam[name]["points_2d"][()]
+                        uv[mask] = clean[mask]          # outliers put back on their own points
+                        cam[name]["points_2d"][...] = uv
+                        break
+                else:
+                    pytest.skip("no outliers in this dataset")
+    report = validate_dataset(root, regenerate=0, progress=False, log=None)
+    assert not report["passed"], f"{attack} went undetected"
 
 
 def test_examples_and_card(dataset):
@@ -73,6 +114,34 @@ def test_dataset_card_front_matter_is_valid_yaml(dataset):
     assert meta["pretty_name"].startswith("PnPCorrespondences:")
     assert meta["configs"][0]["data_files"] == "manifest.parquet"
     assert "Aizierjiang Aiersilan" in card and "github.com/Ezharjan/PnPCorrespondences" in card
+
+
+def test_exported_json_is_strict(dataset, tmp_path):
+    """No NaN/Infinity literals: those are not JSON and break every strict parser."""
+    import json
+
+    def reject_constant(name):
+        raise AssertionError(f"non-finite JSON literal: {name}")
+
+    paths = export_examples(dataset, tmp_path / "ex", per_group=1, max_points=10)
+    for path in list(paths) + [tmp_path / "ex" / "index.json",
+                               dataset / "metadata" / "dataset_stats.json"]:
+        with open(path, "r", encoding="utf-8") as fh:
+            json.load(fh, parse_constant=reject_constant)
+    payload = json.load(open(paths[0], "r", encoding="utf-8"))
+    assert payload["camera"]["valid_radius"] is None or isinstance(payload["camera"]["valid_radius"], float)
+
+
+def test_sweep_subsets_do_not_depend_on_the_solver_list(dataset):
+    """--seed must fix the point subsets, whatever --solvers is set to."""
+    manifest = load_manifest(dataset)
+    subset = select_samples(manifest, max_samples=2, query="outlier_ratio == 0", seed=0)
+    a = run_pnp_benchmark(dataset, subset, ["dlt_lm"], ["all", 8], seed=0, progress=False)
+    b = run_pnp_benchmark(dataset, subset, ["ransac_dlt", "dlt_lm"], ["all", 8], seed=0, progress=False)
+    cols = ["sample_id", "num_points_setting", "num_points_used", "rot_err_deg"]
+    a = a[a.solver == "dlt_lm"][cols].reset_index(drop=True)
+    b = b[b.solver == "dlt_lm"][cols].reset_index(drop=True)
+    pd.testing.assert_frame_equal(a, b)
 
 
 def test_threshold_policy():

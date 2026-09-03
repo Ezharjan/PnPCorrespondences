@@ -16,9 +16,8 @@
 
 # docs/figures/ is version-controlled documentation: the figures the README
 # renders on GitHub. `scripts/make_figures.py` writes there by default, so a
-# regenerated set replaces the committed one in place.
-!docs/figures/
-!docs/figures/*.png
+# regenerated set replaces the committed one in place.  It is tracked because the
+# patterns above are root-anchored - do NOT change "/figures/" to "figures/".
 
 # ---------------------------------------------------------------------- caches
 # Everything below is removed by: python scripts/clean_caches.py

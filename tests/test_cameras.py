@@ -7,8 +7,8 @@ from scipy.spatial.transform import Rotation
 
 from pnpcorr.cameras import (
     BROWN_CONRADY, KANNALA_BRANDT, PINHOLE, Intrinsics, brown_valid_radius, corner_radius,
-    distort_points, kb_valid_theta, normalized_from_pixel, pixel_from_normalized, project_points,
-    project_points_all, sample_intrinsics, undistort_points, undistort_to_pinhole_pixels,
+    distort_points, in_valid_domain, kb_valid_theta, normalized_from_pixel, pixel_from_normalized,
+    project_points, project_points_all, sample_intrinsics, undistort_points, undistort_to_pinhole_pixels,
 )
 from pnpcorr.config import DEFAULTS
 
@@ -96,6 +96,53 @@ def test_undistort_flags_points_outside_domain():
     yd = np.zeros(2)
     _, _, ok = undistort_points(xd, yd, BROWN_CONRADY, coeffs, valid)
     assert ok.tolist() == [False, True]
+
+
+def test_brown_domain_accounts_for_tangential_folding():
+    """The radial monotonicity limit is not the injectivity limit when p1/p2 != 0."""
+    from pnpcorr.cameras import brown_radial_valid_radius, _brown_jacobian_det
+
+    # radially monotonic everywhere, yet the tangential terms fold the map at r ~ 0.66
+    coeffs = np.array([-0.50891128, -1.00575878, -0.01445084, 0.01590187, 1.20685218])
+    assert brown_radial_valid_radius(coeffs) == float("inf")
+    valid = brown_valid_radius(coeffs)
+    assert 0.6 < valid < 0.7
+    # no fold strictly inside the domain, and a fold immediately outside it
+    th = np.linspace(0, 2 * math.pi, 720, endpoint=False)
+    r_in = np.linspace(1e-6, valid * 0.999, 400)
+    det_in = _brown_jacobian_det(r_in[:, None] * np.cos(th), r_in[:, None] * np.sin(th), coeffs)
+    assert (det_in > 0).all()
+    r_out = np.linspace(valid * 1.001, valid * 1.2, 200)
+    det_out = _brown_jacobian_det(r_out[:, None] * np.cos(th), r_out[:, None] * np.sin(th), coeffs)
+    assert (det_out <= 0).any()
+    # the offending observation is now culled instead of silently mis-undistorted
+    K = np.array([[4556.62, 0.0, 1920.0], [0.0, 4556.62, 1080.0], [0.0, 0.0, 1.0]])
+    intr = Intrinsics(BROWN_CONRADY, K, coeffs, 3840, 2160, valid_radius=valid)
+    assert not in_valid_domain(np.array([-0.678467]), np.array([0.436572]), intr)[0]
+
+
+def test_purely_radial_distortion_keeps_the_analytic_limit():
+    coeffs = np.array([-0.30, 0.0, 0.0, 0.0, 0.0])          # p1 = p2 = 0
+    from pnpcorr.cameras import brown_radial_valid_radius
+    assert np.isclose(brown_valid_radius(coeffs), brown_radial_valid_radius(coeffs))
+    assert np.isclose(brown_valid_radius(coeffs), 1.0 / math.sqrt(0.9))
+
+
+def test_sampled_intrinsics_have_injective_domains():
+    from pnpcorr.cameras import _brown_jacobian_det
+
+    rng = np.random.default_rng(3)
+    th = np.linspace(0, 2 * math.pi, 512, endpoint=False)
+    checked = 0
+    for _ in range(120):
+        intr = sample_intrinsics(rng, DEFAULTS["cameras"])
+        if intr.model != BROWN_CONRADY:
+            continue
+        checked += 1
+        r = np.linspace(1e-6, intr.valid_radius * 0.999, 400)
+        det = _brown_jacobian_det(r[:, None] * np.cos(th), r[:, None] * np.sin(th), intr.coeffs)
+        assert (det > 0).all(), "the sampled domain contains a fold"
+    assert checked > 10
 
 
 def test_kb_valid_theta_never_exceeds_half_pi():

@@ -9,12 +9,12 @@ Exit status is 1 when any check fails.
     python scripts/validate_dataset.py --data data --max-cameras 500 --regenerate 3
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from pnpcorr.storage import dump_json  # noqa: E402
 from pnpcorr.validate import validate_dataset  # noqa: E402
 
 
@@ -32,8 +32,7 @@ def main() -> None:
                               progress=not args.no_progress)
     out = Path(args.report) if args.report else Path(args.data) / "metadata" / "validation_report.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    with open(out, "w", encoding="utf-8") as fh:
-        json.dump(report, fh, indent=2)
+    dump_json(report, out)
     print(f"report written to {out}")
     sys.exit(0 if report["passed"] else 1)
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 import csv
 import datetime as _dt
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,6 +59,40 @@ MANIFEST_DTYPES = {
     "p1": "float64", "p2": "float64", "mean_depth": "float64", "noise_sigma": "float64",
     "outlier_ratio": "float64",
 }
+
+
+def json_safe(value: Any) -> Any:
+    """
+    Recursively convert a value to something ``json.dump(..., allow_nan=False)``
+    accepts.  JSON has no ``Infinity`` or ``NaN`` literals (RFC 8259), and the
+    Python default of emitting them bare produces files that ``JSON.parse``, jq,
+    Go and Rust all reject - so non-finite floats become ``null``.
+
+    They do occur: ``valid_radius`` is infinite for a pinhole camera (no
+    distortion limit) and ``elevation_deg`` is NaN for corridor poses.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (np.floating,)):
+        v = float(value)
+        return v if math.isfinite(v) else None
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.bool_,)):
+        return bool(value)
+    if isinstance(value, np.ndarray):
+        return json_safe(value.tolist())
+    if isinstance(value, dict):
+        return {str(k): json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(v) for v in value]
+    return value
+
+
+def dump_json(obj: Any, path: "str | Path", indent: int = 2) -> None:
+    """Write strict, portable JSON (no NaN/Infinity literals)."""
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(json_safe(obj), fh, indent=indent, allow_nan=False)
 
 
 def _to_python(value: Any) -> Any:
@@ -279,8 +314,7 @@ class DatasetWriter:
         for name in stats["files"]:
             total_bytes += os.path.getsize(self.h5_dir / name)
         stats["hdf5_bytes"] = int(total_bytes)
-        with open(self.meta_dir / "dataset_stats.json", "w", encoding="utf-8") as fh:
-            json.dump(stats, fh, indent=2)
+        dump_json(stats, self.meta_dir / "dataset_stats.json")
         with open(self.meta_dir / "config_used.yaml", "w", encoding="utf-8") as fh:
             fh.write(config_to_yaml(self.cfg))
         return stats
@@ -460,13 +494,10 @@ class SampleReader:
 def sample_to_json_dict(sample: Sample, max_points: Optional[int] = None) -> Dict[str, Any]:
     """Human-readable JSON representation of a sample (optionally truncated)."""
     def scal(d):
-        out = {}
-        for k, v in d.items():
-            out[k] = v.tolist() if isinstance(v, np.ndarray) else v
-        return out
+        return {k: json_safe(v) for k, v in d.items()}
 
     m = sample.num_visible if max_points is None else min(sample.num_visible, int(max_points))
-    return {
+    return json_safe({
         "sample_id": sample.sample_id,
         "source": {"file": sample.file, "h5_path": sample.h5_path},
         "scene": scal(sample.scene_attrs),
@@ -489,7 +520,7 @@ def sample_to_json_dict(sample: Sample, max_points: Optional[int] = None) -> Dic
             }
             for i in range(m)
         ],
-    }
+    })
 
 
 def export_examples(data_dir: "str | Path", out_dir: "str | Path", per_group: int = 1,
@@ -516,11 +547,9 @@ def export_examples(data_dir: "str | Path", out_dir: "str | Path", per_group: in
                 payload = sample_to_json_dict(sample, max_points=max_points)
                 name = f"{scene_type}__{model}__{row['condition_name']}.json"
                 path = out_dir / name
-                with open(path, "w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, indent=1)
+                dump_json(payload, path, indent=1)
                 written.append(path)
     index = {"examples": [p.name for p in written], "note": "Each file lists at most "
              f"{max_points} correspondences of one sample; the HDF5 files hold the complete data."}
-    with open(out_dir / "index.json", "w", encoding="utf-8") as fh:
-        json.dump(index, fh, indent=2)
+    dump_json(index, out_dir / "index.json")
     return written

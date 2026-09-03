@@ -10,7 +10,10 @@ Delete every cache and build artefact of the project with one command.
 Generated *data* is never touched: datasets (``data/``, ``runs/``) and benchmark
 results (``results/``) are deliberately left in place and must be removed by hand
 when you want to regenerate them, and ``docs/`` - including the figures the README
-embeds - is version-controlled documentation that no script deletes.  Only the entries
+embeds - is version-controlled documentation that no script deletes.  Names that a
+dataset could plausibly reuse (``build``, ``dist``, ``htmlcov``, ``*.egg-info``)
+are only removed at the top of the tree; the rest are unambiguous tool caches and
+are removed at any depth.  Only the entries
 listed in ``CACHE_DIRS`` / ``CACHE_FILES`` below are removed, matched by exact
 name, so the script can never delete a dataset by accident.
 """
@@ -19,20 +22,20 @@ import shutil
 import sys
 from pathlib import Path
 
-# Directory names removed anywhere under the root.
+# Unambiguous cache directory names, removed anywhere under the root: nothing
+# but a tool writes a directory with one of these names.
 CACHE_DIRS = (
     "__pycache__",        # Python bytecode
     ".pytest_cache",      # pytest
     ".mypy_cache",        # mypy
     ".ruff_cache",        # ruff
     ".ipynb_checkpoints",  # Jupyter
-    "htmlcov",            # coverage HTML report
-    "build",              # setuptools build tree
-    "dist",               # built wheels / sdists
 )
-# Directory names removed only at the root of the tree (never nested, so a
-# user directory called "*.egg-info" deeper in a dataset is left alone).
-CACHE_DIR_SUFFIXES = (".egg-info",)
+# Generic names that a dataset or a user directory could also legitimately use.
+# These are removed ONLY at the top of the tree, so `data/something/build/` and
+# a nested `*.egg-info` are never touched.
+ROOT_ONLY_DIRS = ("build", "dist", "htmlcov")
+ROOT_ONLY_SUFFIXES = (".egg-info",)
 # File names / glob patterns removed anywhere under the root.
 CACHE_FILE_GLOBS = ("*.pyc", "*.pyo", ".coverage", ".coverage.*")
 # Removed only with --all: resumable-upload state written by huggingface_hub
@@ -62,12 +65,15 @@ def _size(path: Path) -> int:
 def find_targets(root: Path, include_hub_cache: bool = False):
     """Return the list of cache paths under ``root`` (deepest first)."""
     targets = []
+    for entry in root.iterdir():                      # root-only names first
+        if entry.is_dir() and (entry.name in ROOT_ONLY_DIRS or entry.name.endswith(ROOT_ONLY_SUFFIXES)):
+            targets.append(entry)
     for entry in root.rglob("*"):
         parts = set(entry.parts)
         if parts & SKIP_DIRS:
             continue
         if entry.is_dir():
-            if entry.name in CACHE_DIRS or entry.name.endswith(CACHE_DIR_SUFFIXES):
+            if entry.name in CACHE_DIRS:
                 targets.append(entry)
         elif entry.is_file():
             if any(entry.match(pattern) for pattern in CACHE_FILE_GLOBS):
