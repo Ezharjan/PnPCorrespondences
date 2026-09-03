@@ -28,7 +28,7 @@ def run(cmd, label):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", required=True)
-    parser.add_argument("--out-root", default=".", help="directory that will contain data/, results/, figures/")
+    parser.add_argument("--out-root", default=".", help="directory that will contain data/, results/, docs/figures/")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--max-samples", type=int, default=1500, help="benchmark sample budget")
     parser.add_argument("--sweep-samples", type=int, default=400)
