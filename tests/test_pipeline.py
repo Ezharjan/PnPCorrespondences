@@ -96,6 +96,33 @@ def test_validation_detects_metadata_corruption(dataset, tmp_path, attack):
     assert not report["passed"], f"{attack} was not detected"
 
 
+def test_zero_sigma_conditions_are_exact(dataset):
+    """At sigma = 0 the observation is a deterministic function of the clean projection.
+
+    Rounding error is not a random sample: the fractional parts of a projected
+    grid are correlated, so the residual has a scene-dependent mean and variance
+    and only an exact comparison is meaningful.
+    """
+    import h5py
+    import numpy as np
+
+    checked = 0
+    for shard in sorted((dataset / "hdf5").glob("*.h5")):
+        with h5py.File(shard, "r") as fh:
+            for scene in (fh[k] for k in fh if k.startswith("scene_")):
+                for cam in (scene[k] for k in scene if k.startswith("camera_")):
+                    clean = cam["points_2d_clean"][()]
+                    for cond in (cam[k] for k in cam if k.startswith("condition_")):
+                        if float(cond.attrs["noise_sigma"]) != 0.0:
+                            continue
+                        inl = ~cond["outlier_mask"][()].astype(bool)
+                        uv = cond["points_2d"][()]
+                        want = np.round(clean[inl]) if bool(cond.attrs["quantize"]) else clean[inl]
+                        assert np.array_equal(uv[inl], want)
+                        checked += 1
+    assert checked > 0
+
+
 def test_examples_and_card(dataset):
     paths = export_examples(dataset, dataset / "examples", per_group=1, max_points=20)
     assert paths and all(p.exists() for p in paths)

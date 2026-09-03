@@ -121,27 +121,32 @@ def _validate_condition(rep: Report, cond_grp, attrs: Dict[str, Any], uv_clean: 
               f"({z_max:.2f} sigma over {n_values} values)")
     if quant:
         rep.check("quantization", np.array_equal(uv, np.round(uv)), f"{label}: quantized coordinates are not integers")
-    if sigma == 0 and not quant:
-        rep.check("noise", np.array_equal(uv[inl], uv_clean[inl]), f"{label}: sigma = 0 inliers are not exact")
 
     # -- value checks on the inlier noise ------------------------------------
-    # Expected RMS of the residual.  Rounding to the integer grid adds an
-    # independent U(-1/2, 1/2) term, so the variance is sigma^2 + 1/12 (accurate
-    # to 0.3 % for the projections here, whose fractional parts are uniform).
-    # This is what gives quantized conditions a value check: integrality alone
-    # says nothing about the magnitude of the perturbation.
-    expected_rms = math.sqrt(sigma ** 2 + (1.0 / 12.0 if quant else 0.0))
-    if expected_rms > 0 and n_values >= 30:
+    # At sigma = 0 the observation is a deterministic function of the clean
+    # projection, so it is checked exactly rather than statistically.  Rounding
+    # error is not a random sample: the fractional parts of a projected grid are
+    # correlated, so its mean and variance depend on the scene geometry.
+    if sigma == 0:
+        expected = np.round(uv_clean[inl]) if quant else uv_clean[inl]
+        rep.check("noise", np.array_equal(uv[inl], expected),
+                  f"{label}: sigma = 0 inliers are not {'round(clean)' if quant else 'exactly clean'}")
+    elif n_values >= 30:
+        # With sigma > 0 the Gaussian term dominates and dithers the rounding, so
+        # the residual is a genuine random sample.  Rounding contributes an
+        # independent U(-1/2, 1/2), hence a variance of sigma^2 + 1/12.
+        expected_rms = math.sqrt(sigma ** 2 + (1.0 / 12.0 if quant else 0.0))
         rms = float(np.sqrt(np.mean(residual ** 2)))
         band = max(0.02, 8.0 / math.sqrt(2.0 * n_values)) + (0.01 if quant else 0.0)
         rep.check("noise", abs(rms / expected_rms - 1.0) <= band,
                   f"{label}: inlier residual RMS {rms:.4f} is {100 * (rms / expected_rms - 1):+.1f} % off the "
                   f"expected {expected_rms:.4f} (band +-{100 * band:.1f} %)")
-        # The noise is zero-mean: a constant offset shifts the mean by many
-        # standard errors even when the RMS still looks plausible.
-        mean_err = float(np.abs(residual.mean()))
-        rep.check("noise", mean_err <= 6.0 * expected_rms / math.sqrt(n_values) + 1e-9,
-                  f"{label}: inlier noise mean {residual.mean():+.4f} is not zero")
+        # Zero mean: a constant offset shifts the mean by many standard errors
+        # even when the RMS still looks plausible.  The standard error is taken
+        # from the observed spread so that the test does not depend on the model.
+        se = rms / math.sqrt(n_values)
+        rep.check("noise", abs(float(residual.mean())) <= 8.0 * se + 1e-9,
+                  f"{label}: inlier noise mean {residual.mean():+.4f} exceeds 8 standard errors ({8 * se:.4f})")
 
     # -- outliers ------------------------------------------------------------
     if mask.any():

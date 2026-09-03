@@ -703,7 +703,7 @@ python scripts/build_dataset_card.py --data data --repo-id Ezharjan/PnPCorrespon
 The card is self-contained: it cites the Hub dataset and describes the method without depending on any other repository. Two further options are accepted by both `build_dataset_card.py` and `upload_to_huggingface.py`:
 
 * `--code-url URL` links the generator's source from the card.
-* `--doi 10.57967/hf/xxxxx` writes the DOI into the card's citation.
+* `--doi` writes a DOI into the card's citation, for a dataset that has one.
 
 The upload script regenerates the card unless `--no-card` is passed, so lasting edits belong in `pnpcorr/hf.py`. The license may be any identifier the Hub recognises: `cc-by-4.0`, `cc0-1.0`, `mit`, `odc-by`, and so on.
 
@@ -721,10 +721,10 @@ The script creates the repository if needed, private unless `--public` is given,
 **Step 6 — publish.** `--public` sets the repository public, and applies to an existing repository as well as a new one. The script prints the visibility it reads back from the Hub after each run, so the state is never in doubt.
 
 ```bash
-python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --public --doi 10.57967/hf/xxxxx
+python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --public
 ```
 
-**Step 7 — a citable identifier.** A public dataset can be registered with DataCite from *Settings* → *DOI*, which returns an identifier of the form `10.57967/hf/…`. The repository has to be public first. A DOI refers to the data as it stands at that moment, so it is minted once the dataset is final; a later revision takes its own. `--doi` writes it into the published card, as above.
+Every upload is a versioned commit, so the dataset stays revisable: corrections and further tiers can be pushed to the same repository, and the citation in Section 18 continues to resolve.
 
 **Loading from the Hub** (works on any machine):
 
@@ -810,7 +810,7 @@ The **dataset** is released under **CC BY 4.0**. Regenerating it and publishing 
 
 ### Citation
 
-The citable artefact is the published dataset, DOI [`10.57967/hf/xxxxx`](https://doi.org/10.57967/hf/xxxxx). [`CITATION.cff`](CITATION.cff) carries the same metadata in machine-readable form for Zenodo, GitHub and reference managers.
+The citable artefact is the published dataset at [`huggingface.co/datasets/Ezharjan/PnPCorrespondences`](https://huggingface.co/datasets/Ezharjan/PnPCorrespondences). [`CITATION.cff`](CITATION.cff) carries the same metadata in machine-readable form for Zenodo, GitHub and reference managers.
 
 ```bibtex
 @misc{PnPCorrespondences,
@@ -819,7 +819,6 @@ The citable artefact is the published dataset, DOI [`10.57967/hf/xxxxx`](https:/
   author       = {Aizierjiang Aiersilan},
   year         = {2026},
   publisher    = {Hugging Face},
-  doi          = {10.57967/hf/xxxxx},
   url          = {https://huggingface.co/datasets/Ezharjan/PnPCorrespondences}
 }
 ```
