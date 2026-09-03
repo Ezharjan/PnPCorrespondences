@@ -7,9 +7,10 @@ Delete every cache and build artefact of the project with one command.
     python scripts/clean_caches.py --all           # also the Hugging Face upload cache
     python scripts/clean_caches.py --root runs     # clean another directory tree
 
-Generated *data* is never touched: datasets (``data/``, ``runs/``), benchmark
-results (``results/``) and figures (``figures/``) are deliberately left in place
-and must be removed by hand when you want to regenerate them.  Only the entries
+Generated *data* is never touched: datasets (``data/``, ``runs/``) and benchmark
+results (``results/``) are deliberately left in place and must be removed by hand
+when you want to regenerate them, and ``docs/`` - including the figures the README
+embeds - is version-controlled documentation that no script deletes.  Only the entries
 listed in ``CACHE_DIRS`` / ``CACHE_FILES`` below are removed, matched by exact
 name, so the script can never delete a dataset by accident.
 """
@@ -121,7 +122,7 @@ def main() -> None:
     verb = "would free" if args.dry_run else "freed"
     print(f"{len(targets)} cache entries, {verb} {freed / 1e6:.2f} MB under {root}")
     if not args.include_hub_cache:
-        print("(datasets, results and figures are never touched; --all also clears .cache/huggingface)")
+        print("(datasets, results and docs/ are never touched; --all also clears .cache/huggingface)")
 
 
 if __name__ == "__main__":

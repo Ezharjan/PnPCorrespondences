@@ -98,19 +98,20 @@ PnPCorrespondences/
 │   ├── export_examples.py      JSON examples            -> data/examples/
 │   ├── run_benchmark.py        benchmarks               -> results/*.csv
 │   ├── analyze_results.py      tables + summary         -> results/tables/, results/summary.md
-│   ├── make_figures.py         figures                  -> figures/*.png
+│   ├── make_figures.py         figures                  -> docs/figures/*.png
 │   ├── build_dataset_card.py   Hugging Face README      -> data/README.md
 │   ├── upload_to_huggingface.py upload data/ to the Hub
 │   ├── run_pipeline.py         everything above, in order
 │   └── clean_caches.py         delete every cache in one command (never the data)
 ├── tests/                      pytest suite (projection is checked against OpenCV)
 ├── examples/quickstart.py      load one sample and solve it with several solvers
-└── docs/
-    ├── figures/                the 13 figures of a `small` run, linked from Section 10
+└── docs/                       version-controlled documentation (committed, not ignored)
+    ├── figures/                the 13 figures the README embeds and links (Section 10);
+    │                           `make_figures.py` writes here, replacing them in place
     └── small_tier_summary.md   the full benchmark summary quoted in Section 9.6
 ```
 
-Generated artefacts (`data/`, `results/`, `figures/`, `runs/`) are written next to the code by default and are ignored by git (`.gitignore`). Caches are ignored too and are removed by `python scripts/clean_caches.py` (Section 12); generated data is never deleted by any script.
+Generated artefacts — `data/`, `results/`, `runs/` and a root-level `figures/` if you ask for one — are written next to the code and ignored by git. The ignore patterns are anchored to the repository root (`/data/`, `/results/`, …) precisely so that **`docs/figures/` stays tracked**: an unanchored `figures/` rule would match at any depth and silently drop the images the README renders on GitHub. Caches are ignored too and are removed by `python scripts/clean_caches.py` (Section 12); neither datasets nor `docs/` are ever deleted by a script.
 
 ## 3. Quick start
 
@@ -612,8 +613,10 @@ The numbers below are taken from `results/summary.md` of a `small` run — 600 s
 ## 10. Visualisations
 
 ```bash
-python scripts/make_figures.py --data data --results results --out figures
+python scripts/make_figures.py --data data --results results
 ```
+
+Figures go to `docs/figures/` by default — the directory the table below links and the images further down embed — so regenerating them makes this README render *your* run. Pass `--out DIR` to write them elsewhere, `--dataset-only` / `--benchmark-only` to draw one half.
 
 | figure | content |
 |---|---|
@@ -639,7 +642,7 @@ python scripts/make_figures.py --data data --results results --out figures
   <img src="docs/figures/pnp_success_heatmap.png" alt="Success heat map" width="90%">
 </p>
 
-Every figure name above links to the version produced by the `small` run that Section 9.6 quotes, so the complete set can be inspected without generating anything. The figures use one fixed colour per solver (the same solver always has the same colour), marker shapes as a second encoding, at most eight series per panel and a single-hue sequential ramp for heat maps.
+Every figure name above links to the committed version, produced by the `small` run that Section 9.6 quotes, so the complete set can be inspected without generating anything; re-running `make_figures.py` overwrites them with your own. The figures use one fixed colour per solver (the same solver always has the same colour), marker shapes as a second encoding, at most eight series per panel and a single-hue sequential ramp for heat maps.
 
 ## 11. The one-command pipeline
 
@@ -647,7 +650,7 @@ Every figure name above links to the version produced by the `small` run that Se
 python scripts/run_pipeline.py --config configs/full.yaml --out-root . --workers 6 --max-samples 3000 --sweep-samples 600 --max-rigs 100 --repo-id Ezharjan/PnPCorrespondences
 ```
 
-runs, in order: generate → validate → export examples → benchmark (all tasks) → analyse → figures → dataset card, producing `data/`, `results/` and `figures/` under `--out-root`. `--skip-generate` reuses an existing `data/`, `--skip-benchmark` only draws the dataset figures, `--validate-cameras N` validates a subset for very large tiers. Every stage is an ordinary script call that is printed before it runs, so any stage can be re-run individually.
+runs, in order: generate → validate → export examples → benchmark (all tasks) → analyse → figures → dataset card, producing `data/`, `results/` and `docs/figures/` under `--out-root` (`--figures DIR` overrides the figure directory). `--skip-generate` reuses an existing `data/`, `--skip-benchmark` only draws the dataset figures, `--validate-cameras N` validates a subset for very large tiers. Every stage is an ordinary script call that is printed before it runs, so any stage can be re-run individually.
 
 ## 12. Housekeeping: caches, disk space and regeneration
 
@@ -665,12 +668,14 @@ python scripts/clean_caches.py --all         # also .cache/huggingface (resumabl
 python scripts/clean_caches.py --root runs   # clean another directory tree
 ```
 
-**The generated data is deliberately *not* a cache.** `data/`, `runs/`, `results/` and `figures/` are never deleted by any script — regenerating a `full` tier costs half an hour, so removing it must be a conscious act. Delete a dataset by hand when you want to rebuild it:
+**The generated data is deliberately *not* a cache.** `data/`, `runs/` and `results/` are never deleted by any script — regenerating a `full` tier costs half an hour, so removing it must be a conscious act. Delete a dataset by hand when you want to rebuild it:
 
 ```bash
-rm -rf data results figures                        # Linux / macOS
-Remove-Item -Recurse -Force data, results, figures # Windows PowerShell
+rm -rf data results                        # Linux / macOS
+Remove-Item -Recurse -Force data, results  # Windows PowerShell
 ```
+
+Leave `docs/figures/` alone: it is committed documentation, not an artefact. `make_figures.py` overwrites those PNGs in place, so `git checkout -- docs/figures` restores the reference set if you want it back.
 
 or let the generator replace it in place with `python scripts/generate_dataset.py --config configs/full.yaml --out data --overwrite`, which clears `hdf5/`, `metadata/`, `examples/`, `manifest.*` and `README.md` inside `--out` and writes a fresh dataset. `--overwrite` is also what `run_pipeline.py` uses, so re-running the pipeline never mixes two generations.
 
@@ -767,9 +772,10 @@ All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML file
 | RANSAC solvers take seconds at 95 % outliers | they run their full `--max-iters` budget; lower it or restrict `--solvers` |
 | `hf: command not found` | `pip install -U huggingface_hub`; or use `huggingface-cli login`, or set `HF_TOKEN` |
 | upload interrupted | run the same upload command again; `upload_large_folder` resumes |
-| `__pycache__`, `.pytest_cache`, `*.egg-info` clutter the tree | `python scripts/clean_caches.py` (Section 12); it never touches `data/`, `results/` or `figures/` |
+| `__pycache__`, `.pytest_cache`, `*.egg-info` clutter the tree | `python scripts/clean_caches.py` (Section 12); it never touches `data/`, `results/` or `docs/` |
 | the dataset is still there after `clean_caches.py` | by design - delete `data/` by hand or regenerate with `--overwrite` (Section 12) |
 | OpenCV 5 is installed | supported; the fisheye calibration flags moved namespace in 5.0 and the code accepts both spellings |
+| README images are missing on GitHub | `docs/figures/` must be committed - check `git check-ignore -v docs/figures/pnp_runtime.png` returns nothing (the shipped `.gitignore` anchors its patterns to the repository root for exactly this reason) |
 
 ## 17. Design decisions and known limitations
 

@@ -5,7 +5,8 @@ Run the whole pipeline: generate -> validate -> examples -> benchmark -> analyze
     python scripts/run_pipeline.py --config configs/smoke.yaml --out-root runs/smoke --workers 2
     python scripts/run_pipeline.py --config configs/full.yaml  --out-root .           --workers 6 --max-samples 3000
 
-Outputs land in <out-root>/data, <out-root>/results and <out-root>/figures.
+Outputs land in <out-root>/data, <out-root>/results and <out-root>/docs/figures
+(the directory the README embeds; override it with --figures).
 """
 import argparse
 import subprocess
@@ -28,7 +29,9 @@ def run(cmd, label):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", required=True)
-    parser.add_argument("--out-root", default=".", help="directory that will contain data/, results/, figures/")
+    parser.add_argument("--out-root", default=".", help="directory that will contain data/, results/, docs/figures/")
+    parser.add_argument("--figures", default=None,
+                        help="figure directory (default: <out-root>/docs/figures, which the README embeds)")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--max-samples", type=int, default=1500, help="benchmark sample budget")
     parser.add_argument("--sweep-samples", type=int, default=400)
@@ -40,7 +43,8 @@ def main() -> None:
     args = parser.parse_args()
 
     root = Path(args.out_root)
-    data, results, figures = root / "data", root / "results", root / "figures"
+    data, results = root / "data", root / "results"
+    figures = Path(args.figures) if args.figures else root / "docs" / "figures"
     py = sys.executable
     s = ROOT / "scripts"
     if not args.skip_generate:

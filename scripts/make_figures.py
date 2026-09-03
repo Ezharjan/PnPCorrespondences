@@ -2,23 +2,32 @@
 """
 Render dataset figures (from the HDF5 files) and benchmark figures (from results/).
 
-    python scripts/make_figures.py --data data --results results --out figures
-    python scripts/make_figures.py --data data --out figures --dataset-only
+Figures are written to ``docs/figures/`` by default - the directory the README
+embeds and links, so a regenerated set replaces the committed one in place and
+the README then renders your own run.
+
+    python scripts/make_figures.py --data data --results results
+    python scripts/make_figures.py --data data --dataset-only
+    python scripts/make_figures.py --data data --results results --out /tmp/fig
 """
 import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from pnpcorr.plots import make_benchmark_figures, make_dataset_figures  # noqa: E402
+
+DEFAULT_OUT = ROOT / "docs" / "figures"
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", default=None, help="dataset directory (for the dataset figures)")
     parser.add_argument("--results", default=None, help="results directory (for the benchmark figures)")
-    parser.add_argument("--out", required=True, help="output directory for the PNG files")
+    parser.add_argument("--out", default=str(DEFAULT_OUT),
+                        help="output directory for the PNG files (default: docs/figures of this repository)")
     parser.add_argument("--dataset-only", action="store_true")
     parser.add_argument("--benchmark-only", action="store_true")
     args = parser.parse_args()
