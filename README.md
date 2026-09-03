@@ -2,9 +2,10 @@
 
 **A large, systematic, image-free dataset of 2D–3D point correspondences with exact ground truth — built for benchmarking camera calibration, Perspective-n-Point (PnP) solvers, robust estimators and bundle adjustment.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Dataset on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20dataset-Ezharjan%2FPnPCorrespondences-yellow)](https://huggingface.co/datasets/Ezharjan/PnPCorrespondences)
+[![License: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
+[![Data: CC BY 4.0](https://img.shields.io/badge/data-CC%20BY%204.0-blue.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
-[![Repository](https://img.shields.io/badge/GitHub-Ezharjan%2FPnPCorrespondences-181717?logo=github)](https://github.com/Ezharjan/PnPCorrespondences)
 
 This repository contains everything needed to *generate* the dataset from scratch on a laptop, *validate* it, *benchmark* fifteen classical and modern solvers on it (from a from-scratch DLT to SQPnP and MAGSAC++), *analyse* the results, *visualise* dataset and results, and *publish* the dataset on the Hugging Face Hub.
 
@@ -699,7 +700,12 @@ hf auth login            # huggingface_hub >= 0.34; older versions: huggingface-
 python scripts/build_dataset_card.py --data data --repo-id Ezharjan/PnPCorrespondences --license cc-by-4.0
 ```
 
-Edit the generated `data/README.md` freely (authors, citation, notes); the upload script regenerates it unless you pass `--no-card`. Pick the license that suits you (`cc-by-4.0`, `cc0-1.0`, `mit`, `odc-by`, …); the value must be one of the Hub's license identifiers.
+The card stands on its own: it cites the Hub dataset and links no source repository. Two optional flags, accepted by both `build_dataset_card.py` and `upload_to_huggingface.py`:
+
+* `--code-url URL` links the generator's source from the card. Use it only if that repository is publicly reachable; omit it and the card simply describes the method.
+* `--doi 10.57967/hf/…` adds the DOI to the citation, once one has been minted (Step 6).
+
+Edit the generated `data/README.md` freely (notes, acknowledgements); the upload script regenerates it unless you pass `--no-card`. Pick the license that suits you (`cc-by-4.0`, `cc0-1.0`, `mit`, `odc-by`, …); the value must be one of the Hub's license identifiers, and it should match `license:` in `CITATION.cff`.
 
 **Step 4 — dry run, then upload:**
 
@@ -711,6 +717,16 @@ python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorres
 The script creates the repository if needed (`--private` by default; `--public` to publish immediately) and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits worth knowing: keep individual files below 50 GB (shards are ≈ 300 MB with `max_scenes_per_file: 20`) and folders below 10 000 files.
 
 **Step 5 — verify.** Open `https://huggingface.co/datasets/Ezharjan/PnPCorrespondences`: the card is rendered, the *Dataset Viewer* shows the manifest table, and *Files* lists the HDF5 shards. Switch the repository to public in Settings when ready.
+
+**Step 6 — mint a DOI.** On the dataset page, *Settings* → *DOI* → *Generate DOI*. The Hub registers the dataset with DataCite and returns an identifier of the form `10.57967/hf/…`. The repository must be **public** first, and the DOI pins the dataset as it stands, so mint it only once the data is final; publishing further versions later requires a new DOI. Then propagate it:
+
+```bash
+# 1. uncomment and fill the doi: line in CITATION.cff
+# 2. add  doi = {10.57967/hf/...}  to the BibTeX entry in Section 18
+# 3. rebuild and re-upload the card so it carries the DOI too
+python scripts/build_dataset_card.py --data data --repo-id Ezharjan/PnPCorrespondences --doi 10.57967/hf/XXXXXXX
+python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --public --doi 10.57967/hf/XXXXXXX
+```
 
 **Loading from the Hub** (works on any machine):
 
@@ -779,7 +795,7 @@ All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML file
 
 ## 17. Design decisions and known limitations
 
-* **Effective distortion coefficients.** Raw Brown–Conrady coefficients are meaningless without the field of view; the generator therefore samples the displacement at the image corner and derives the raw coefficients, and restricts each polynomial to its injective domain so that every stored observation has a unique pre-image. For Brown–Conrady that domain is bounded by the first zero of the full 2-D Jacobian determinant, not by radial monotonicity: with tangential terms present the two differ, and using the radial bound admits points whose distorted position has a second pre-image, which `undistort_points` may return instead — silently, since the wrong branch is a genuine root. Real lenses with visible folding outside the sensor are covered because the domain must only cover 80 % of the corner radius.
+* **Effective distortion coefficients.** Raw Brown–Conrady coefficients are meaningless without the field of view; the generator therefore samples the displacement at the image corner and derives the raw coefficients, and restricts each polynomial to its injective domain so that every stored observation has a unique pre-image. For Brown–Conrady that domain is bounded by the first zero of the full 2-D Jacobian determinant rather than by radial monotonicity: with tangential terms present the two differ, and beyond the fold a distorted position has two pre-images that both satisfy the forward model exactly, so no inverse solver can separate them. Real lenses with visible folding outside the sensor are covered because the domain must only cover 80 % of the corner radius.
 * **Nominal field of view.** `hfov_deg` is the FOV of the *undistorted* model ($f_x$ follows from it exactly); the effective FOV of a distorted lens differs slightly.
 * **Undistortion for calibrated PnP.** Observations are mapped to the equivalent pinhole image with the exact inverse of the ground-truth distortion (bisection + Newton, 10⁻⁹ accuracy) so that every solver sees the same problem. Random outliers that fall outside the invertible domain keep their raw coordinates (they are outliers anyway); the benchmark reports how many per solve in the `num_noninvertible` column.
 * **Planar inputs to OpenCV.** Coplanar points are expressed in their own plane frame ($z = 0$ exactly) before calling OpenCV, so that the result does not depend on the arbitrary orientation of the world frame. A planar target in a rotated world frame is coplanar only to floating-point rounding, and OpenCV's EPnP amplifies that $10^{-16}$ third dimension badly once observations carry noise: on tilted planes at σ = 0.5 px it gives a 20° median error in the rotated frame versus 0.23° for the same target expressed at $z = \text{const}$. The canonical frame reproduces the axis-aligned result at every noise level, so the benchmark measures the solver rather than the frame it was handed. The transform is exact, is applied to every OpenCV solver uniformly and never selectively, and EPnP's ~47 % failure rate on planar targets survives it — that failure rate is a property of OpenCV's implementation, not of this preprocessing.
@@ -793,21 +809,23 @@ All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML file
 
 The generator — everything in this repository — is released under the **MIT License**, Copyright © 2026 Aizierjiang Aiersilan. The full text is in [`LICENSE`](LICENSE).
 
-The *dataset* you generate and publish carries its own license, chosen when the card is built (`--license`, `cc-by-4.0` by default). Pick any identifier the Hugging Face Hub recognises: `cc-by-4.0`, `cc0-1.0`, `mit`, `odc-by`, and so on.
+The *dataset* carries its own license, chosen when the card is built (`--license`, `cc-by-4.0` by default). Any identifier the Hugging Face Hub recognises works: `cc-by-4.0`, `cc0-1.0`, `mit`, `odc-by`, and so on. If you change it, change `license:` in [`CITATION.cff`](CITATION.cff) to the matching SPDX identifier as well.
 
 ### Citation
 
-[`CITATION.cff`](CITATION.cff) drives GitHub's *Cite this repository* button and is read by Zenodo and most reference managers. In BibTeX:
+The citable artefact is the published dataset. [`CITATION.cff`](CITATION.cff) records the metadata in machine-readable form and is read by Zenodo, GitHub and most reference managers.
 
 ```bibtex
-@software{Aiersilan_PnPCorrespondences,
-  author  = {Aiersilan, Aizierjiang},
-  title   = {{PnPCorrespondences: Synthetic 2D--3D Point Correspondences for
-              Camera Calibration and PnP Benchmarking}},
-  year    = {2026},
-  license = {MIT},
-  url     = {https://github.com/Ezharjan/PnPCorrespondences}
+@misc{PnPCorrespondences,
+  title        = {PnPCorrespondences: Synthetic 2D-3D Point Correspondences for
+                  Camera Calibration and PnP Benchmarking},
+  author       = {Aizierjiang Aiersilan},
+  year         = {2026},
+  publisher    = {Hugging Face},
+  url          = {https://huggingface.co/datasets/Ezharjan/PnPCorrespondences}
 }
 ```
 
-If you publish a dataset generated with this code, please cite both this repository and the Hugging Face dataset you release, and state the `master_seed` and configuration tier so that your data can be regenerated exactly. Solver references are listed in Section 9.2.
+Once a DOI has been minted for the dataset (Hugging Face → dataset page → *Settings* → *DOI*), add it to the entry as `doi = {…}`, uncomment the `doi:` line in `CITATION.cff`, and pass `--doi` to `build_dataset_card.py` so the published card carries it too.
+
+When reporting results, state the `master_seed` and the configuration tier as well: together they identify the exact data, which can then be regenerated bit-for-bit. Solver references are listed in Section 9.2.

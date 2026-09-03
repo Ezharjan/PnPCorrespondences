@@ -1,26 +1,33 @@
 cff-version: 1.2.0
-message: "If you use this software or a dataset generated with it, please cite it as below."
+message: "If you use this dataset, please cite it as below."
 title: "PnPCorrespondences: Synthetic 2D-3D Point Correspondences for Camera Calibration and PnP Benchmarking"
 abstract: >-
-  A generator and benchmark suite for large, systematic, image-free datasets of
-  2D-3D point correspondences with exact ground truth. It synthesises structured
-  3D scenes, samples camera intrinsics and look-at poses for pinhole,
-  Brown-Conrady and Kannala-Brandt models, applies controlled Gaussian pixel
-  noise, quantization and outlier contamination, and serialises everything to
-  HDF5 with a Parquet manifest. It also ships fifteen classical and modern PnP
-  solvers, single-view and multi-view calibration baselines, evaluation metrics,
-  summary tables and figures, so that camera calibration, Perspective-n-Point
-  solvers, robust estimators and bundle adjustment can be benchmarked against
-  absolute ground truth.
-type: software
+  A large, systematic, image-free dataset of 2D-3D point correspondences with
+  exact ground truth, for benchmarking camera calibration, Perspective-n-Point
+  solvers, robust estimators and bundle adjustment. Structured 3D scenes are
+  projected through pinhole, Brown-Conrady and Kannala-Brandt camera models over
+  a wide range of fields of view and sensor resolutions, then perturbed by
+  controlled Gaussian pixel noise, pixel quantization and outlier contamination
+  from 0 to 95 per cent in three modes. Every sample stores the 3D points, the
+  noisy 2D observations, the exact intrinsics, lens distortion and extrinsics
+  that produced them, and a ground-truth outlier mask, serialised to HDF5 with a
+  Parquet manifest. Every array is a deterministic function of a master seed, so
+  the dataset can be regenerated bit-for-bit. The accompanying generator, which
+  is released under the MIT licence, also provides fifteen classical and modern
+  PnP solvers, single-view and multi-view calibration baselines, evaluation
+  metrics and reproducible benchmark tables.
+type: dataset
 authors:
   - family-names: Aiersilan
     given-names: Aizierjiang
-repository-code: "https://github.com/Ezharjan/PnPCorrespondences"
-url: "https://github.com/Ezharjan/PnPCorrespondences"
-license: MIT
+url: "https://huggingface.co/datasets/Ezharjan/PnPCorrespondences"
+repository: "https://huggingface.co/datasets/Ezharjan/PnPCorrespondences"
+license: CC-BY-4.0
 version: 1.0.0
 date-released: "2026-09-03"
+# After minting a DOI on the Hugging Face dataset page (Settings -> DOI),
+# uncomment the line below and fill in the identifier it returns.
+# doi: "10.57967/hf/XXXXXXX"
 keywords:
   - camera calibration
   - perspective-n-point

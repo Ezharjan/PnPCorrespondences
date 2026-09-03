@@ -18,13 +18,19 @@ def _size_category(n: int) -> str:
     return "10M<n<100M"
 
 
-GENERATOR_REPO = "https://github.com/Ezharjan/PnPCorrespondences"
 AUTHOR = "Aizierjiang Aiersilan"
 
 
 def build_dataset_card(data_dir: "str | Path", repo_id: str, license_id: str = "cc-by-4.0",
-                       pretty_name: Optional[str] = None, homepage: str = "") -> str:
-    """Render the Hugging Face dataset card (README.md with YAML front matter)."""
+                       pretty_name: Optional[str] = None, homepage: str = "",
+                       code_url: str = "", doi: str = "") -> str:
+    """
+    Render the Hugging Face dataset card (README.md with YAML front matter).
+
+    ``code_url`` is linked as the generator's source when given; leave it empty
+    to publish a card that stands on its own.  ``doi`` is added to the front
+    matter and the citation once one has been minted for the dataset.
+    """
     data_dir = Path(data_dir)
     stats = load_stats(data_dir)
     name = pretty_name or "PnPCorrespondences: Synthetic 2D-3D Point Correspondences for Camera Calibration and PnP Benchmarking"
@@ -35,6 +41,10 @@ def build_dataset_card(data_dir: "str | Path", repo_id: str, license_id: str = "
     fovs = ", ".join(f"{k}: {v}" for k, v in stats["cameras_per_fov_class"].items())
     splits = ", ".join(f"{k}: {v}" for k, v in stats["samples_per_split"].items())
     conditions = "\n".join(f"| `{k}` | {v:,} |" for k, v in stats["samples_per_condition"].items())
+    bibkey = repo_id.split("/")[-1].replace("-", "_").replace(".", "_")
+    code_sentence = (f" ([source]({code_url}), MIT license)." if code_url else
+                     " (MIT license); the methodology is summarised below.")
+    doi_bib = f"\n  doi          = {{{doi}}}," if doi else ""
     files = "\n".join(f"- `hdf5/{f}`" for f in stats["files"])
     # The pretty name contains a colon, so it must be a quoted YAML scalar; JSON
     # string syntax is valid YAML and escapes quotes and backslashes correctly.
@@ -150,35 +160,40 @@ with h5py.File(f"{{root}}/{{row.file}}", "r") as f:
 
 ## Generation
 
-The dataset was produced with the open-source `pnpcorr` generator
-([{GENERATOR_REPO}]({GENERATOR_REPO}), MIT license); the exact configuration is in
-`metadata/config_used.yaml` and the full methodology is documented in that repository's
-README. Every array is a deterministic function of the master seed
-(`{stats['master_seed']}`), so the dataset can be regenerated bit-for-bit. Camera model
-conventions follow OpenCV (`cv2.projectPoints` / `cv2.fisheye.projectPoints`).
+The dataset was produced by the `pnpcorr` generator{code_sentence} The exact
+configuration is stored in `metadata/config_used.yaml`, and every array is a
+deterministic function of the master seed (`{stats['master_seed']}`), so the dataset can
+be regenerated bit-for-bit. Camera model conventions follow OpenCV
+(`cv2.projectPoints` / `cv2.fisheye.projectPoints`); projections agree with those
+functions to 1e-8 px.
+
+Design notes worth knowing when interpreting the data:
+
+- Distortion coefficients are sampled as the *effective* radial displacement at the
+  image corner and converted to raw polynomial coefficients, so `mild` and `strong`
+  mean the same thing at every focal length and resolution.
+- Each distortion polynomial is restricted to its injective domain, bounded for
+  Brown-Conrady by the first zero of the full 2-D Jacobian determinant, so every
+  stored observation has a unique pre-image and can be undistorted exactly.
+- Noise is applied as Gaussian jitter, then outlier contamination, then optional
+  quantization, so every stored observation lies on the sensor grid when
+  `quantize` is true.
+- Observations are not clipped to the image, so the noise statistics are exact at
+  the border.
 
 ## License
 
-The dataset is released under `{license_id}`. The generator is released under the MIT
-license, Copyright (c) 2026 {AUTHOR}.
+The dataset is released under `{license_id}`. Copyright (c) 2026 {AUTHOR}.
 
 ## Citation
 
 ```bibtex
-@misc{{{repo_id.split('/')[-1].replace('-', '_')}_dataset,
+@misc{{{bibkey},
   title        = {{{name}}},
   author       = {{{AUTHOR}}},
   year         = {{2026}},
-  publisher    = {{Hugging Face}},
-  howpublished = {{\\url{{https://huggingface.co/datasets/{repo_id}}}}}
-}}
-
-@software{{Aiersilan_PnPCorrespondences,
-  author  = {{Aiersilan, Aizierjiang}},
-  title   = {{{{PnPCorrespondences: Synthetic 2D--3D Point Correspondences for Camera Calibration and PnP Benchmarking}}}},
-  year    = {{2026}},
-  license = {{MIT}},
-  url     = {{{GENERATOR_REPO}}}
+  publisher    = {{Hugging Face}},{doi_bib}
+  url          = {{https://huggingface.co/datasets/{repo_id}}}
 }}
 ```
 """

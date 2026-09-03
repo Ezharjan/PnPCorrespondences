@@ -26,6 +26,8 @@ def main() -> None:
     parser.add_argument("--public", dest="private", action="store_false", help="public repository")
     parser.add_argument("--token", default=None, help="Hub token (default: HF_TOKEN env var or cached login)")
     parser.add_argument("--license", default="cc-by-4.0")
+    parser.add_argument("--code-url", default="", help="link the generator source in the card (omit if the repository is private)")
+    parser.add_argument("--doi", default="", help="DOI of the dataset, once minted on the Hub")
     parser.add_argument("--no-card", action="store_true", help="do not (re)generate README.md before uploading")
     parser.add_argument("--simple-upload", action="store_true", help="use upload_folder instead of upload_large_folder")
     parser.add_argument("--dry-run", action="store_true", help="list what would be uploaded and exit")
@@ -36,7 +38,8 @@ def main() -> None:
         sys.exit(f"{data} does not look like a generated dataset (manifest.parquet missing)")
     if not args.no_card:
         with open(data / "README.md", "w", encoding="utf-8") as fh:
-            fh.write(build_dataset_card(data, args.repo_id, args.license))
+            fh.write(build_dataset_card(data, args.repo_id, args.license,
+                                        code_url=args.code_url, doi=args.doi))
         print("dataset card refreshed:", data / "README.md")
     files = sorted(p for p in data.rglob("*") if p.is_file())
     total = sum(p.stat().st_size for p in files)

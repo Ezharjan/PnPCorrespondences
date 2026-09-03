@@ -20,8 +20,11 @@ def main() -> None:
     parser.add_argument("--license", default="cc-by-4.0", help="SPDX-like license id used by the Hub")
     parser.add_argument("--pretty-name", default=None)
     parser.add_argument("--homepage", default="")
+    parser.add_argument("--code-url", default="", help="link the generator source in the card (omit if the repository is private)")
+    parser.add_argument("--doi", default="", help="DOI of the dataset, once minted on the Hub")
     args = parser.parse_args()
-    card = build_dataset_card(args.data, args.repo_id, args.license, args.pretty_name, args.homepage)
+    card = build_dataset_card(args.data, args.repo_id, args.license, args.pretty_name, args.homepage,
+                              code_url=args.code_url, doi=args.doi)
     path = Path(args.data) / "README.md"
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(card)

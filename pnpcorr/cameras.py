@@ -194,12 +194,12 @@ def brown_valid_radius(coeffs: np.ndarray, num_directions: int = 128, num_steps:
     Brown-Conrady map (radial *and* tangential) is locally injective, i.e. its
     Jacobian determinant stays positive in every direction.
 
-    The radial monotonicity limit alone is not sufficient: the tangential terms
-    ``p1``, ``p2`` fold the map at strictly smaller radii, and they can fold it
-    even when the radial part is monotonic everywhere (where the radial limit is
-    infinite).  Admitting those points would give distorted observations two
-    pre-images, so ``undistort_points`` could return the wrong one - silently, and
-    with its ``ok`` flag set, because the wrong branch is a genuine root.
+    Radial monotonicity alone is not sufficient: the tangential terms ``p1``,
+    ``p2`` fold the map at strictly smaller radii, and they can fold it even when
+    the radial part is monotonic everywhere.  Beyond the fold a distorted position
+    has two pre-images, and both satisfy the forward model exactly, so an inverse
+    solver cannot tell them apart by its residual.  Bounding the domain here is
+    what keeps every projected observation uniquely invertible.
 
     The search is a direction scan plus a bisection; it is exact (and cheap) when
     ``p1 == p2 == 0``, where the map is purely radial.

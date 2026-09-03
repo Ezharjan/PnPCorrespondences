@@ -88,10 +88,10 @@ def max_deviation_sigmas(num_values: int, alpha: float = 1e-9) -> float:
     Upper bound on ``max |Z|`` over ``num_values`` independent standard normals
     that is exceeded with probability at most ``alpha``.
 
-    A fixed multiple of sigma (e.g. 6) is *not* a valid bound: the largest of
-    N standard normals grows like ``sqrt(2 ln N)``, so a dataset with 10^8
-    correspondences would fail a 6-sigma test by construction.  The classical
-    tail bound ``P(|Z| > z) <= exp(-z^2 / 2)`` gives the (conservative) value
+    A fixed multiple of sigma cannot serve as a bound here: the largest of N
+    standard normals grows like ``sqrt(2 ln N)``, so any constant threshold is
+    exceeded once the dataset is large enough.  The classical tail bound
+    ``P(|Z| > z) <= exp(-z^2 / 2)`` gives the (conservative) value
     ``z = sqrt(2 ln(N / alpha))``; it is never allowed below 6.
     """
     n = max(int(num_values), 1)
@@ -128,8 +128,8 @@ def _validate_condition(rep: Report, cond_grp, attrs: Dict[str, Any], uv_clean: 
     # Expected RMS of the residual.  Rounding to the integer grid adds an
     # independent U(-1/2, 1/2) term, so the variance is sigma^2 + 1/12 (accurate
     # to 0.3 % for the projections here, whose fractional parts are uniform).
-    # Without this, quantized conditions had no value check at all and a constant
-    # shift of every observation went undetected.
+    # This is what gives quantized conditions a value check: integrality alone
+    # says nothing about the magnitude of the perturbation.
     expected_rms = math.sqrt(sigma ** 2 + (1.0 / 12.0 if quant else 0.0))
     if expected_rms > 0 and n_values >= 30:
         rms = float(np.sqrt(np.mean(residual ** 2)))
@@ -149,9 +149,9 @@ def _validate_condition(rep: Report, cond_grp, attrs: Dict[str, Any], uv_clean: 
             rep.check("outliers", (uv[mask, 0] >= 0).all() and (uv[mask, 0] < W).all() and (uv[mask, 1] >= 0).all()
                       and (uv[mask, 1] < H).all(), f"{label}: uniform outliers outside the image")
         # An outlier's observation belongs to a different 3D point, so it must sit
-        # far from its own clean projection - much further than the noise.  This
-        # replaces a check that only ran when sigma == 0, i.e. never on a shipped
-        # tier, and it catches outliers reset to their clean coordinates.
+        # far from its own clean projection - much further than the noise.  The
+        # comparison is against the noise scale rather than an exact equality, so
+        # the check is meaningful at every sigma, not only at sigma = 0.
         disp = np.linalg.norm(uv[mask] - uv_clean[mask], axis=1)
         scale = max(sigma, 0.5 if quant else 0.0, 1e-6)
         rep.check("outliers", float(np.median(disp)) > 5.0 * scale,
@@ -215,8 +215,8 @@ def _validate_manifest_row(rep: Report, row, sattrs: Dict[str, Any], cattrs: Dic
         "num_outliers": int(dattrs["num_outliers"]),
     }
     # One check per row rather than per column: the mismatching columns are all
-    # named in the message, and 33 rep.check calls per condition would otherwise
-    # dominate the runtime of a large tier.
+    # named in the message, and 33 rep.check calls per condition would dominate
+    # the runtime of a large tier.
     mismatches = []
     for key, want in expected.items():
         if key not in row:

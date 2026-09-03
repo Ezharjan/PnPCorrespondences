@@ -36,7 +36,7 @@ def test_validation_passes(dataset):
 
 
 def test_validation_detects_corrupted_observations(dataset, tmp_path):
-    """The validator must reject a dataset whose noise no longer matches its metadata."""
+    """The validator must reject a dataset whose noise does not match its metadata."""
     import shutil
 
     import h5py
@@ -57,7 +57,7 @@ def test_validation_detects_corrupted_observations(dataset, tmp_path):
 
 @pytest.mark.parametrize("attack", ["reset_outliers", "manifest_fx", "pinhole_coeffs"])
 def test_validation_detects_metadata_corruption(dataset, tmp_path, attack):
-    """Regression: these three all passed validation before the checks were hardened."""
+    """Corrupting metadata rather than geometry must still fail validation."""
     import shutil
 
     import h5py
@@ -93,7 +93,7 @@ def test_validation_detects_metadata_corruption(dataset, tmp_path, attack):
                 else:
                     pytest.skip("no outliers in this dataset")
     report = validate_dataset(root, regenerate=0, progress=False, log=None)
-    assert not report["passed"], f"{attack} went undetected"
+    assert not report["passed"], f"{attack} was not detected"
 
 
 def test_examples_and_card(dataset):
@@ -113,7 +113,16 @@ def test_dataset_card_front_matter_is_valid_yaml(dataset):
     assert meta["license"] == "cc-by-4.0"
     assert meta["pretty_name"].startswith("PnPCorrespondences:")
     assert meta["configs"][0]["data_files"] == "manifest.parquet"
-    assert "Aizierjiang Aiersilan" in card and "github.com/Ezharjan/PnPCorrespondences" in card
+    assert "Aizierjiang Aiersilan" in card
+    # The card must stand alone: it cites the Hub dataset and links no source
+    # repository unless one is explicitly supplied.
+    assert "huggingface.co/datasets/Ezharjan/PnPCorrespondences" in card
+    assert "github" not in card.lower()
+    linked = build_dataset_card(dataset, "Ezharjan/PnPCorrespondences",
+                                code_url="https://example.org/src", doi="10.57967/hf/0000000")
+    assert "[source](https://example.org/src)" in linked
+    assert "doi          = {10.57967/hf/0000000}" in linked
+    assert yaml.safe_load(linked.split("---", 2)[1])["license"] == "cc-by-4.0"
 
 
 def test_exported_json_is_strict(dataset, tmp_path):
