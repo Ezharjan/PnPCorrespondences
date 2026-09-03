@@ -1,0 +1,21 @@
+# Small tier: ~1 minute, 30 scenes, 360 views, 5,400 samples, ~150 MB.
+# Good for developing solvers and checking the whole pipeline end to end.
+dataset:
+  name: PnPCorrespondencesSmall
+  version: "1.0.0"
+  master_seed: 20260902
+  max_scenes_per_file: 50
+
+scenes:
+  counts:
+    planar_single: 6
+    planar_multi: 6
+    volumetric: 6
+    mixed: 6
+    depth_stratified: 6
+  num_points: [800, 2500]
+
+cameras:
+  num_intrinsics_per_scene: 3
+  num_poses_per_intrinsics: 4
+# The 15 default noise conditions (see pnpcorr/config.py) are used.

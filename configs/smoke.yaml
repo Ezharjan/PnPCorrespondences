@@ -1,0 +1,28 @@
+# Smoke test: a few seconds, 5 scenes, 15 views, 60 samples.
+# Use it to check the installation and to try the whole pipeline quickly.
+dataset:
+  name: PnPCorrespondencesSmoke
+  version: "1.0.0"
+  master_seed: 20260902
+  max_scenes_per_file: 50
+
+scenes:
+  counts:
+    planar_single: 1
+    planar_multi: 1
+    volumetric: 1
+    mixed: 1
+    depth_stratified: 1
+  num_points: [300, 600]
+
+cameras:
+  num_intrinsics_per_scene: 1
+  num_poses_per_intrinsics: 3
+
+conditions:
+  mode: list
+  items:
+    - {noise_sigma: 0.0, quantize: false, outlier_ratio: 0.0, outlier_type: uniform}
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.0, outlier_type: uniform}
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.2, outlier_type: uniform}
+    - {noise_sigma: 1.0, quantize: true,  outlier_ratio: 0.5, outlier_type: mixed}

@@ -1,0 +1,27 @@
+# Factorial-design variant: every combination of sigma x quantization x outlier
+# ratio x outlier type (42 conditions) on a small number of scenes.  Useful for
+# interaction studies; combine with the `small` scene counts.
+dataset:
+  name: PnPCorrespondencesFactorial
+  version: "1.0.0"
+  master_seed: 20260902
+
+scenes:
+  counts:
+    planar_single: 4
+    planar_multi: 4
+    volumetric: 4
+    mixed: 4
+    depth_stratified: 4
+
+cameras:
+  num_intrinsics_per_scene: 2
+  num_poses_per_intrinsics: 4
+
+conditions:
+  mode: factorial
+  factorial:
+    noise_sigma: [0.0, 0.5, 2.0]
+    quantize: [false, true]
+    outlier_ratio: [0.0, 0.2, 0.5, 0.8]
+    outlier_type: [uniform, swap]

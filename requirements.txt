@@ -1,0 +1,18 @@
+# Core numerical stack
+numpy>=1.26
+scipy>=1.11
+h5py>=3.10
+pandas>=2.1
+pyarrow>=14.0
+PyYAML>=6.0
+tqdm>=4.66
+# Solvers (EPnP, P3P/AP3P, IPPE, SQPnP, RANSAC/USAC, calibrateCamera).  Both
+# OpenCV 4.x and 5.x are supported; the generator, the validator and the
+# from-scratch solvers work without OpenCV at all.
+opencv-python>=4.10
+# Figures
+matplotlib>=3.8
+# Hugging Face upload / download
+huggingface_hub>=0.25
+# Tests
+pytest>=7.4

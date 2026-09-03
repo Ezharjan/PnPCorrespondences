@@ -1,0 +1,22 @@
+# Extra-large tier: 1,000 scenes x 80 views x 15 conditions = 1.2 million samples,
+# ~25 GB of HDF5.  Expect several hours of generation; use --workers.
+dataset:
+  name: PnPCorrespondencesXL
+  version: "1.0.0"
+  master_seed: 20260902
+  max_scenes_per_file: 20
+  compression: gzip
+  compression_level: 1
+
+scenes:
+  counts:
+    planar_single: 200
+    planar_multi: 200
+    volumetric: 200
+    mixed: 200
+    depth_stratified: 200
+  num_points: [500, 2000]
+
+cameras:
+  num_intrinsics_per_scene: 8
+  num_poses_per_intrinsics: 10

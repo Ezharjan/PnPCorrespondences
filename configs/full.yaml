@@ -1,0 +1,50 @@
+# Full tier: the large systematic dataset.
+# 400 scenes x 48 views x 15 noise conditions = 288,000 samples,
+# roughly 30 million 2D-3D correspondences per condition and ~6 GB of HDF5.
+# Generation takes on the order of 30-45 minutes on a laptop with 4-6 workers.
+dataset:
+  name: PnPCorrespondences
+  version: "1.0.0"
+  master_seed: 20260902
+  max_scenes_per_file: 20        # -> 20 scenes per shard, 4 shards per scene type (~300 MB each)
+  compression: gzip
+  compression_level: 1
+
+scenes:
+  counts:
+    planar_single: 80
+    planar_multi: 80
+    volumetric: 80
+    mixed: 80
+    depth_stratified: 80
+  num_points: [500, 2000]
+  scene_size: [4.0, 20.0]
+
+cameras:
+  num_intrinsics_per_scene: 6
+  num_poses_per_intrinsics: 8
+  min_visible_points: 20
+
+conditions:
+  mode: list
+  items:
+    # noise sweep (no outliers, no quantization)
+    - {noise_sigma: 0.0, quantize: false, outlier_ratio: 0.00, outlier_type: uniform}
+    - {noise_sigma: 0.1, quantize: false, outlier_ratio: 0.00, outlier_type: uniform}
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.00, outlier_type: uniform}
+    - {noise_sigma: 1.0, quantize: false, outlier_ratio: 0.00, outlier_type: uniform}
+    - {noise_sigma: 2.0, quantize: false, outlier_ratio: 0.00, outlier_type: uniform}
+    # quantization (integer pixel grid)
+    - {noise_sigma: 0.0, quantize: true,  outlier_ratio: 0.00, outlier_type: uniform}
+    - {noise_sigma: 0.5, quantize: true,  outlier_ratio: 0.00, outlier_type: uniform}
+    # outlier sweep, uniform replacement, sigma = 0.5 px
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.05, outlier_type: uniform}
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.20, outlier_type: uniform}
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.50, outlier_type: uniform}
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.80, outlier_type: uniform}
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.95, outlier_type: uniform}
+    # outlier sweep, swapped assignments, sigma = 0.5 px
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.20, outlier_type: swap}
+    - {noise_sigma: 0.5, quantize: false, outlier_ratio: 0.50, outlier_type: swap}
+    # everything at once
+    - {noise_sigma: 1.0, quantize: true,  outlier_ratio: 0.50, outlier_type: mixed}

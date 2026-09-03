@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this software or a dataset generated with it, please cite it as below."
+title: "PnPCorrespondences: Synthetic 2D-3D Point Correspondences for Camera Calibration and PnP Benchmarking"
+abstract: >-
+  A generator and benchmark suite for large, systematic, image-free datasets of
+  2D-3D point correspondences with exact ground truth. It synthesises structured
+  3D scenes, samples camera intrinsics and look-at poses for pinhole,
+  Brown-Conrady and Kannala-Brandt models, applies controlled Gaussian pixel
+  noise, quantization and outlier contamination, and serialises everything to
+  HDF5 with a Parquet manifest. It also ships fifteen classical and modern PnP
+  solvers, single-view and multi-view calibration baselines, evaluation metrics,
+  summary tables and figures, so that camera calibration, Perspective-n-Point
+  solvers, robust estimators and bundle adjustment can be benchmarked against
+  absolute ground truth.
+type: software
+authors:
+  - family-names: Aiersilan
+    given-names: Aizierjiang
+repository-code: "https://github.com/Ezharjan/PnPCorrespondences"
+url: "https://github.com/Ezharjan/PnPCorrespondences"
+license: MIT
+version: 1.0.0
+date-released: "2026-09-03"
+keywords:
+  - camera calibration
+  - perspective-n-point
+  - pnp
+  - pose estimation
+  - bundle adjustment
+  - lens distortion
+  - synthetic dataset
+  - benchmark
+  - computer vision
