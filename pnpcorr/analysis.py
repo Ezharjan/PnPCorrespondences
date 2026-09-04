@@ -78,15 +78,51 @@ def _solver_order(df: pd.DataFrame) -> List[str]:
     return [s for s in SOLVERS.keys() if s in present] + [s for s in present if s not in SOLVERS]
 
 
+def _sweep_note(df: pd.DataFrame) -> str:
+    """
+    Describe the sweep's unequal denominators using the subset sizes this run actually
+    evaluated, so the note stays true whatever ``--num-points`` was passed.
+    """
+    if "num_points_setting" not in df.columns:
+        return ""
+    try:
+        sizes = {name: sorted({int(v) for v in grp["num_points_setting"]})
+                 for name, grp in df.groupby("solver", sort=False)}
+    except (TypeError, ValueError):        # the "all" setting is not a subset size
+        return ""
+    every = sorted({n for v in sizes.values() for n in v})
+    parts = []
+    for name, v in sorted(sizes.items()):
+        if v == every:
+            continue
+        if len(v) == 1:
+            parts.append(f"`{name}` at n = {v[0]} only")
+        elif v == [n for n in every if n >= v[0]]:
+            parts.append(f"`{name}` from n = {v[0]} up")
+        else:
+            parts.append(f"`{name}` at n = " + ", ".join(str(n) for n in v))
+    if not parts:
+        return ""
+    return (" Each solver is scored only at the subset sizes it accepts, so `solves` differs between "
+            "rows and the percentages compare within a solver, not down the column: "
+            + "; ".join(parts) + ".")
+
+
 def solver_overview(df: pd.DataFrame) -> pd.DataFrame:
     """
     One row per solver with the headline numbers.
 
-    Every solver is offered every sample, so `solves` is the same for all of them
-    and the columns are directly comparable.  A solver restricted to part of the
-    input space - IPPE to coplanar scenes, the DLT away from them - declines the
-    rest, which shows up as a lower `returned (%)`; `success when returned (%)`
-    then says how often it was right when it did answer.
+    In the all-points tasks every solver is offered every sample, so `solves` is the
+    same for all of them and the columns are directly comparable.  A solver restricted
+    to part of the input space - IPPE to coplanar scenes, the DLT away from them -
+    declines the rest, which shows up as a lower `returned (%)`; `success when
+    returned (%)` then says how often it was right when it did answer.
+
+    In the number-of-points sweep the denominators differ by construction: a solver is
+    only called at the subset sizes it accepts, so a minimal solver is scored at its own
+    size alone and a solver with a high `min_points` only from that size up.  The
+    percentages there are within a solver, never across the column; `_sweep_note` spells
+    out which solver saw which sizes for the run at hand.
     """
     g = df.groupby("solver", sort=False)
     returned = g["ok"].sum()
@@ -136,7 +172,8 @@ def summarize_pnp(df: pd.DataFrame, out_dir: Path, tag: str = "pnp") -> Dict[str
     if sweep_only:
         sections.append(write_table(solver_overview(base), out_dir / f"{tag}_overview_all",
                                     "Solver overview - all subset sizes pooled (outlier-free conditions)",
-                                    "Success = rotation error <= 5 deg and relative translation error <= 5 %."))
+                                    "Success = rotation error <= 5 deg and relative translation error <= 5 %."
+                                    + _sweep_note(base)))
     else:
         sections.append(write_table(solver_overview(base), out_dir / f"{tag}_overview_all", "Solver overview - all conditions",
                                     "Success = rotation error <= 5 deg and relative translation error <= 5 %. "

@@ -104,7 +104,7 @@ def _factor_row(row: pd.Series) -> Dict[str, Any]:
     return {k: row[k] for k in SAMPLE_FACTORS if k in row.index}
 
 
-def _solver_seed(sample_key: Sequence[int], solver_name: str, setting: Any) -> int:
+def solver_seed(sample_key: Sequence[int], solver_name: str, setting: Any) -> int:
     """
     Deterministic RANSAC seed for one (sample, solver, subset size).
 
@@ -117,13 +117,23 @@ def _solver_seed(sample_key: Sequence[int], solver_name: str, setting: Any) -> i
 
 
 def environment_info() -> Dict[str, Any]:
+    """
+    The versions a result depends on numerically.  SciPy drives every Levenberg-Marquardt
+    refinement and OpenCV every solver but three, so a summary that does not name them
+    cannot be checked against a later run.
+    """
+    import h5py
+    import scipy
+
     info = {
         "pnpcorr_version": __version__,
         "python": platform.python_version(),
         "platform": platform.platform(),
         "processor": platform.processor(),
         "numpy": np.__version__,
+        "scipy": scipy.__version__,
         "pandas": pd.__version__,
+        "h5py": h5py.__version__,
         "opencv": None,
     }
     if HAVE_CV2:
@@ -206,7 +216,7 @@ def run_pnp_benchmark(data_dir, manifest_subset: pd.DataFrame, solver_names: Opt
                     t0 = time.perf_counter()
                     try:
                         est = spec.fn(X, uv, intr.K, threshold=thr, max_iters=max_iters, confidence=confidence,
-                                      seed=_solver_seed(key, spec.name, setting))
+                                      seed=solver_seed(key, spec.name, setting))
                     except Exception as exc:  # solver crashed: record as failure
                         est = None
                         reason = f"exception: {type(exc).__name__}: {exc}"[:160]

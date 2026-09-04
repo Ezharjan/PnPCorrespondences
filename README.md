@@ -106,7 +106,7 @@ PnPCorrespondences/
 │   ├── run_pipeline.py         everything above, in order
 │   └── clean_caches.py         delete every cache in one command (never the data)
 ├── tests/                      pytest suite (projection is checked against OpenCV)
-├── examples/                   nine runnable, self-contained examples; see examples/README.md
+├── examples/                   ten runnable, self-contained examples; see examples/README.md
 │   ├── quickstart.py           load one sample and solve it with several solvers
 │   ├── 01_read_with_h5py_only.py        read the data with h5py and pandas alone
 │   ├── 02_camera_models_and_distortion.py  the three lens models, forward and inverse
@@ -115,7 +115,8 @@ PnPCorrespondences/
 │   ├── 05_robustness_to_outliers.py     breakdown point of the robust estimators
 │   ├── 06_multiview_calibration.py      intrinsics and distortion from a rig of views
 │   ├── 07_training_dataloader.py        fixed-size batches for a learned solver
-│   └── 08_custom_tier.py                design, generate and validate your own tier
+│   ├── 08_custom_tier.py                design, generate and validate your own tier
+│   └── 09_bring_your_own_solver.py      register a new solver and benchmark it
 └── docs/                       version-controlled documentation (committed, not ignored)
     ├── figures/                the 13 figures the README embeds and links (Section 10);
     │                           `make_figures.py` writes here, replacing them in place
@@ -138,7 +139,7 @@ python examples/quickstart.py --data runs/smoke/data
 
 The smoke pipeline generates a tiny dataset, validates it, exports JSON examples, runs every benchmark, writes the summary tables and figures and the dataset card, all in about two minutes. The full dataset is produced by the same command with `configs/full.yaml` (Section 8). Afterwards, `python scripts/clean_caches.py` removes every cache the run left behind and touches nothing else (Section 12).
 
-[`examples/`](examples/) holds nine self-contained scripts and is the shortest way into the material: reading the format with h5py alone, the three camera models, the noise design of a single view, a miniature solver benchmark, the outlier breakdown point, multi-view calibration, batching for a learned solver, and building a tier of your own. [`examples/README.md`](examples/README.md) indexes them.
+[`examples/`](examples/) holds ten self-contained scripts and is the shortest way into the material: reading the format with h5py alone, the three camera models, the noise design of a single view, a miniature solver benchmark, the outlier breakdown point, multi-view calibration, batching for a learned solver, building a tier of your own, and registering a solver of your own so the real benchmark scores it beside the shipped ones. [`examples/README.md`](examples/README.md) indexes them.
 
 ## 4. Installation
 
@@ -367,6 +368,9 @@ data/
 │   └── ...
 ├── manifest.parquet              one row per sample (view x condition) - every scalar factor
 ├── manifest.csv                  the same table as CSV
+├── manifest_train.parquet        the same rows partitioned on `split`; these are what the
+├── manifest_val.parquet          Hub's dataset viewer opens as the dataset's three splits
+├── manifest_test.parquet
 ├── metadata/
 │   ├── dataset_stats.json        counts, composition, size, timing
 │   ├── config_used.yaml          the exact generator configuration
@@ -511,7 +515,7 @@ python scripts/validate_dataset.py --data data                      # every came
 python scripts/validate_dataset.py --data data --max-cameras 2000 --regenerate 5   # a fast spot check
 ```
 
-The validator re-projects the stored ground truth for every camera and compares it with `points_2d_clean`, `point_indices` and `depths` (10⁻⁹ px), verifies rotations, camera centres, `K` structure and the FOV/focal relation, checks bounds and depths, counts outliers, bounds the largest inlier deviation with a sample-size-aware Gaussian tail bound (`√(2 ln(N/10⁻⁹))` σ, since the largest of N normal deviates grows with N) and tests the inlier noise RMS against σ within eight standard errors, checks quantization (including the σ > 0 case, where the expected residual RMS is $\sqrt{\sigma^2 + 1/12}$), checks that the inlier noise is zero-mean, that outliers are displaced far beyond the noise scale, that every swapped observation matches some selected point's clean projection and that uniform outliers lie inside the image, checks planarity labels and that pinhole cameras carry zero distortion coefficients, re-derives **every** manifest column from the HDF5 groups and compares it, cross-checks `dataset_stats.json` against the manifest, and regenerates `--regenerate` random scenes to compare them bit-for-bit. A `small`-tier dataset runs 56 399 checks in 15 s; the `full` tier runs 2 999 639 checks in 14 minutes, on two cores. It writes `data/metadata/validation_report.json` and exits with status 1 on any failure. One shard is open at a time, so the resident set stays near 1 GB whatever the tier.
+The validator re-projects the stored ground truth for every camera and compares it with `points_2d_clean`, `point_indices` and `depths` (10⁻⁹ px), verifies rotations, camera centres, `K` structure and the FOV/focal relation, checks bounds and depths, counts outliers, bounds the largest inlier deviation with a sample-size-aware Gaussian tail bound (`√(2 ln(N/10⁻⁹))` σ, since the largest of N normal deviates grows with N) and tests the inlier noise RMS against σ within eight standard errors, checks quantization (including the σ > 0 case, where the expected residual RMS is $\sqrt{\sigma^2 + 1/12}$), checks that the inlier noise is zero-mean, that outliers are displaced far beyond the noise scale, that every swapped observation matches some selected point's clean projection and that uniform outliers lie inside the image, checks planarity labels and that pinhole cameras carry zero distortion coefficients, re-derives **every** manifest column from the HDF5 groups and compares it, cross-checks `dataset_stats.json` against the manifest, and regenerates `--regenerate` random scenes to compare them bit-for-bit. A `small`-tier dataset runs 56 399 checks in 15 s; the `full` tier runs 2 999 637 checks in 13 minutes, on two cores. It writes `data/metadata/validation_report.json` and exits with status 1 on any failure. One shard is open at a time, so the resident set stays near 1 GB whatever the tier.
 
 ### 8.4 Export human-readable examples
 
@@ -523,7 +527,7 @@ python scripts/export_examples.py --data data            # -> data/examples/*.js
 
 Copy a configuration and edit it. The YAML files override the documented defaults in `pnpcorr/config.py` (Section 14). Examples: a pinhole-only dataset (`cameras.model_probs: {pinhole: 1.0}`), only planar targets (`scenes.counts` with a single entry), a 42-condition factorial design (`configs/factorial.yaml`), integer-only sensors (`quantize: true` everywhere), or 95 % outliers at every noise level.
 
-Restricting a set of alternatives works as written: a mapping whose keys are competing options — `dataset.splits`, `scenes.counts`, `scenes.planar_layout_probs`, `cameras.model_probs`, `cameras.fov_class_probs`, `cameras.distortion_levels.probs` and `conditions.items` — replaces the default outright, so `{pinhole: 1.0}` really does mean pinhole only. Lookup tables keyed by name, such as `cameras.fov_classes` and the per-model distortion ranges, are merged instead, so a single class can be retuned without restating the others. `metadata/config_used.yaml` therefore reloads to exactly the configuration that produced the dataset, which is what makes the reproducibility check meaningful. `python examples/08_custom_tier.py --help` does the same thing from Python.
+Restricting a set of alternatives works as written: a mapping whose keys are competing options — `dataset.splits`, `scenes.counts`, `scenes.planar_layout_probs`, `cameras.model_probs`, `cameras.fov_class_probs`, `cameras.distortion_levels.probs` and `conditions.items` — replaces the default outright, so `{pinhole: 1.0}` really does mean pinhole only. Lookup tables keyed by name, such as `cameras.fov_classes` and the per-model distortion ranges, are merged instead, so a single class can be retuned without restating the others. `metadata/config_used.yaml` therefore reloads to exactly the configuration that produced the dataset, which is what makes the reproducibility check meaningful. [`examples/08_custom_tier.py`](examples/08_custom_tier.py) builds, generates and validates such a restricted tier from Python instead of YAML.
 
 ## 9. Benchmarks, evaluation and analysis
 
@@ -589,7 +593,7 @@ python scripts/run_benchmark.py --data data --out results --task all --max-sampl
 * `--max-samples` draws a deterministic *stratified* subset: every (scene type, camera model, FOV class, condition) cell receives about the same number of samples, so each factor level is equally represented whatever the dataset size. `--sweep-samples` and `--max-rigs` do the same for the sweep and the multi-view task.
 * `--task pnp|sweep|calibration|multiview` runs one task; `--solvers sqpnp,epnp,cv_usac_magsac` restricts the solver set; `--split test` restricts to a split; `--query "camera_model == 'kannala_brandt'"` applies any pandas query to the manifest.
 * `--num-points 4,6,8,12,20,50,100,500` sets the subset sizes of the sweep; `--max-iters`, `--confidence`, `--threshold` control the robust estimators; `--seed` fixes the subset selection and the RANSAC seeds. The point subsets are drawn from a stream that depends only on the sample, never on how many solvers are being evaluated, so a `--solvers`-restricted run is directly comparable with a full one.
-* Runtime, measured on two cores: 1.5 s per sample for the PnP task on ≈ 1 400-point views (the robust solvers dominate; at 95 % outliers OpenCV's RANSAC runs its full iteration budget), 1.8 s per sample for the eight-size sweep, 25 ms per single-view calibration, and per rig 0.2 s for OpenCV against 2.8 s for the from-scratch bundle adjustment. Thirteen of the fifteen solvers appear in the all-points tasks; `p3p` and `ap3p` are defined at exactly four correspondences and appear in the sweep. The `small`-tier budget of Section 9.6 (`--max-samples 600 --sweep-samples 120 --max-rigs 30`) took 20 minutes, and the default budget (`--max-samples 1500 --sweep-samples 400 --max-rigs 60`) takes roughly 50.
+* Runtime, measured on two cores: 0.47 s per sample for the PnP task on ≈ 1 400-point views (the robust solvers dominate; at 95 % outliers OpenCV's RANSAC runs its full iteration budget), 0.52 s per sample for the eight-size sweep, 24 ms per single-view calibration, and per rig 0.13 s for OpenCV against 2.6 s for the from-scratch bundle adjustment. Thirteen of the fifteen solvers appear in the all-points tasks; `p3p` and `ap3p` are defined at exactly four correspondences and appear in the sweep. The `small`-tier budget of Section 9.6 (`--max-samples 600 --sweep-samples 120 --max-rigs 30`) took 7.5 minutes, and the default budget (`--max-samples 1500 --sweep-samples 400 --max-rigs 60`) takes roughly 20.
 
 Outputs: `results/pnp_results.csv`, `results/pnp_num_points_results.csv`, `results/calibration_results.csv`, `results/multiview_results.csv` (one row per solve with every factor and metric) and `results/benchmark_meta.json` (environment, arguments, timing).
 
@@ -624,18 +628,18 @@ python scripts/run_pipeline.py --config configs/small.yaml --out-root runs/small
     --figures docs/figures --summary-doc docs/small_tier_summary.md
 ```
 
-that is, 600 stratified PnP samples with all visible correspondences (≈ 1 400 per view), 120 samples for the number-of-points sweep, 600 single-view calibrations and 30 multi-view rigs, on OpenCV 4.13. The pipeline writes the complete summary to [`docs/small_tier_summary.md`](docs/small_tier_summary.md), so the tables quoted here are a generated artefact rather than a transcription. The `full` tier gives far tighter statistics; the qualitative picture is stable.
+that is, 600 stratified PnP samples with all visible correspondences (≈ 1 400 per view), 120 samples for the number-of-points sweep, 600 single-view calibrations and 30 multi-view rigs, on two cores with the versions a fresh `pip install -r requirements.txt` resolves to at the time of writing (Python 3.11, NumPy 2.4, SciPy 1.17, pandas 3.0, OpenCV 5.0.0); the summary's first line records them exactly. The pipeline writes the complete summary to [`docs/small_tier_summary.md`](docs/small_tier_summary.md), so the tables quoted here are a generated artefact rather than a transcription. The benchmark is as deterministic as the data: two independent runs of that command reproduce every accuracy column of all 19 756 result rows exactly, and differ only in the wall-clock runtimes. All but three of the fifteen solvers call into OpenCV, so the figures below are tied to the version named above; the summary records the environment it was produced in, and a run on a different OpenCV major version will move some of them. The `full` tier gives far tighter statistics; the qualitative picture is stable.
 
 Every solver is offered all 600 samples, including the ones outside its domain, so the counts below share one denominator. Reading the overview: `returned (%)` is coverage, `success when returned (%)` is accuracy where the solver answered. IPPE answers on the 17.8 % of samples that are coplanar and the DLT variants on the 82.2 % that are not.
 
-* **Exact observations (σ = 0, no quantization).** The solvers that end in a Levenberg–Marquardt step recover the pose to between 7 × 10⁻¹⁵ and 2 × 10⁻¹⁴ deg (DLT + LM and `ransac_dlt` 7.3 × 10⁻¹⁵, `ransac_p3p` 7.4 × 10⁻¹⁵, EPnP + LM 8.6 × 10⁻¹⁵, OpenCV's iterative solver 2.2 × 10⁻¹⁴). The ones that stop at their algebraic solution land six to eighty times higher — the linear DLT 4.7 × 10⁻¹⁴, IPPE 1.6 × 10⁻¹³, EPnP 3.2 × 10⁻¹³, SQPnP 5.9 × 10⁻¹³ — which is still far below any measurement error. `cv_ransac_epnp` and `cv_ransac_ap3p` stop at 3.2 × 10⁻⁷ deg and MAGSAC++ at 2.5 × 10⁻⁵, because what they return is the consensus model, unpolished.
+* **Exact observations (σ = 0, no quantization).** The solvers that end in a Levenberg–Marquardt step recover the pose to between 7 × 10⁻¹⁵ and 1.1 × 10⁻¹⁴ deg (DLT + LM and `ransac_dlt` 7.3 × 10⁻¹⁵, `ransac_p3p` 7.4 × 10⁻¹⁵, `cv_ransac_epnp_lm` 8.0 × 10⁻¹⁵, EPnP + LM 8.6 × 10⁻¹⁵, OpenCV's iterative solver 1.1 × 10⁻¹⁴). The ones that stop at their algebraic solution land six to ninety times higher — the linear DLT 4.7 × 10⁻¹⁴, IPPE 1.6 × 10⁻¹³, EPnP 3.2 × 10⁻¹³, SQPnP 6.4 × 10⁻¹³ — which is still far below any measurement error. `cv_ransac_epnp` and `cv_ransac_ap3p` stop at 3.2 × 10⁻⁷ deg and MAGSAC++ at 2.5 × 10⁻⁵, because what they return is the consensus model, unpolished.
 * **Noise.** The error grows linearly with σ. At σ = 2 px the median rotation error of the refined solvers is ≈ 0.03 deg (DLT + LM 0.031, `ransac_p3p` 0.033, SQPnP 0.034, EPnP + LM 0.034, iterative 0.035) and the linear DLT is three times worse at 0.094. Integer-pixel quantization with no other noise costs 0.0033–0.0054 deg for every solver except the linear DLT (0.013): the same as σ ≈ 0.3 px, which is what the 1/√12 = 0.289 px standard deviation of rounding predicts.
 * **Outliers.** The uniform sweep at σ = 0.5 px separates the estimators sharply. `ransac_p3p` holds 100 % success to 80 % contamination and MAGSAC++ 98 %, and they fall to 20 % and 38 % at 95 %, where 2 000 iterations are no longer enough — at 5 % inliers the expected number of 3-point draws before one is clean is 8 000. `cv_ransac_ap3p` (4-point samples) keeps 89 % at 80 % outliers and `cv_ransac_epnp` (5-point samples) only 48 %, exactly the (1 − ε)ᵐ ordering; `ransac_dlt` (6-point samples) breaks down first, at 4 % by 80 %. The non-robust solvers are what the sweep is there to measure against: at 5 % outliers they already run from 56 % (EPnP + LM) down to 2 % (SQPnP, DLT), at 20 % uniform contamination none of them clears 9 %, and from 50 % on they are at zero. Swapped and uniform outliers are close to equally hard for the robust estimators — four of the six agree within one point at both 20 % and 50 %, and the largest gap is `ransac_dlt`'s seven points at 20 %, in favour of the swapped variant.
 * **Planar scenes.** On the 47 outlier-free `planar_single` samples the DLT variants return nothing at all and say why (`degenerate: coplanar points`), which is the designed behaviour rather than a silently wrong pose. IPPE (0.013 deg), the iterative solver (0.0093), SQPnP (0.012), `ransac_p3p` (0.0069) and MAGSAC++ (0.0069) all succeed on every one of them. OpenCV's EPnP is the outlier: 49 % success and a 17.6 deg median, and because `solvePnPRansac` re-estimates its final pose with EPnP, `cv_ransac_epnp` (13.4 deg) and `cv_ransac_ap3p` (17.4 deg) inherit the weakness. Adding the LM step repairs it — `epnp_lm` reaches 0.016 deg and `cv_ransac_epnp_lm` 0.44 deg — and the solvers that never route through EPnP are unaffected.
 * **Few points.** At n = 4, SQPnP succeeds on 97 % of the subsets (0.13 deg median), the minimal P3P and AP3P solvers on 95 % (0.24 deg) and EPnP + LM on 80 % (0.17 deg); plain EPnP is not a minimal solver and manages 58 % (1.8 deg). IPPE applies to the quarter of the subsets that are coplanar and succeeds on 77 % of those. From n ≈ 12 on, every LM-refined solver converges to the same accuracy, and by n = 500 they lie between 0.006 and 0.017 deg (0.018 for the linear DLT, 0.020 for IPPE).
 * **Fields of view.** For calibrated PnP the field of view barely matters: every solver but two sits between 0.002 and 0.014 deg in every class. The exceptions are the linear DLT, which degrades to 0.087 deg on telephoto views against 0.015 deg at normal FOV, and IPPE, which spans 0.0005 deg on fisheye views to 0.042 deg at normal FOV because it only ever sees the planar scenes. For anything that estimates intrinsics, narrow fields are the ill-conditioned case — the principal point becomes nearly unobservable, and multi-view calibration returns 13 px (OpenCV) to 23 px (bundle adjustment) of principal-point error on telephoto rigs while the reprojection residual stays small.
-* **Calibration.** The single-view DLT recovers the intrinsics of pinhole cameras to 0.02 % focal error and shows the expected systematic bias where it has no distortion model: 0.63 % on Brown–Conrady and 11.6 % on Kannala–Brandt cameras (5.8 % over the fisheye FOV class). In multi-view calibration the from-scratch bundle adjustment matches OpenCV's `calibrateCamera` to the fourth digit on Brown–Conrady rigs (0.0175 % against 0.0178 % focal error) and on pinhole rigs (0.0295 % against 0.0294 %, since both fit the same five Brown–Conrady coefficients). The two part company on non-planar fisheye rigs, where `cv2.fisheye.calibrate` initialises its extrinsics under a planar-target assumption: 18.6 % focal error and 43 % success against 0.006 % and 86 % for the bundle adjustment.
-* **Runtime** (medians over ≈ 1 400-correspondence views; absolute values scale with the CPU, the ratios do not): IPPE 0.2 ms, SQPnP 0.8 ms, EPnP 1.4 ms, DLT 1.8 ms, the LM-refined solvers 8.6–9.9 ms, OpenCV's RANSAC and MAGSAC++ 8–18 ms, and the from-scratch RANSACs 22 ms (`ransac_p3p`) and 47 ms (`ransac_dlt`), whose inner loop is pure Python.
+* **Calibration.** The single-view DLT recovers the intrinsics of pinhole cameras to 0.02 % focal error and shows the expected systematic bias where it has no distortion model: 0.63 % on Brown–Conrady and 11.6 % on Kannala–Brandt cameras (5.8 % over the fisheye FOV class). In multi-view calibration the from-scratch bundle adjustment matches OpenCV's `calibrateCamera` to the fourth digit on Brown–Conrady rigs (0.0175 % against 0.0178 % focal error) and on pinhole rigs (0.0295 % against 0.0294 %, since both fit the same five Brown–Conrady coefficients). The two part company on non-planar fisheye rigs, where `cv2.fisheye.calibrate` initialises its extrinsics under a planar-target assumption: 1.1 % focal error, 14 px of principal-point error and 43 % success, against 0.006 %, 0.12 px and 86 % for the bundle adjustment.
+* **Runtime** (medians over ≈ 1 400-correspondence views; absolute values scale with the CPU and the OpenCV build, the ordering does not). Everything that stays inside OpenCV's C++ is fastest: IPPE 0.21 ms, SQPnP 0.38 ms, EPnP 0.73 ms, `cv_ransac_ap3p` 1.4 ms, `cv_ransac_epnp` 2.0 ms, the iterative solver 2.8 ms and MAGSAC++ 5.8 ms, with the from-scratch linear DLT at 1.6 ms among them. Anything that ends in this project's own Levenberg–Marquardt costs 7–8 ms (`epnp_lm` 7.2, `cv_ransac_epnp_lm` 7.4, `dlt_lm` 8.0), and the from-scratch robust estimators, whose sampling loop is pure Python, 16 ms (`ransac_p3p`) and 38 ms (`ransac_dlt`).
 * **Invertibility.** Of the 848 876 correspondences the PnP task undistorted, 862 — 0.10 % — had no pre-image inside the invertible domain and kept their raw coordinates. Nearly all are injected outliers thrown outside the image circle of a strongly distorted lens: 782 of the 862 are on `strong` cameras, and only 21 occur under an outlier-free condition. The `num_noninvertible` column reports the count per solve.
 
 ## 10. Visualisations
@@ -716,7 +720,7 @@ Disk-space notes: the HDF5 shards dominate (Section 7); benchmark results are a 
 
 ## 13. Uploading the dataset to Hugging Face
 
-The `data/` directory *is* the Hugging Face dataset repository: HDF5 shards, the Parquet manifest (which the Hub's dataset viewer displays), metadata, JSON examples and a generated dataset card.
+The `data/` directory *is* the Hugging Face dataset repository: HDF5 shards, the Parquet manifest and its three per-split partitions (which the Hub's dataset viewer displays), metadata, JSON examples and a generated dataset card.
 
 **Step 1 — account and token.** Create an account at https://huggingface.co, then create a token with *write* access under Settings → Access Tokens.
 
@@ -726,7 +730,20 @@ The `data/` directory *is* the Hugging Face dataset repository: HDF5 shards, the
 hf auth login            # huggingface_hub >= 0.34; older versions: huggingface-cli login
 ```
 
-**Step 3 — build the dataset card.** The card (`data/README.md`) is generated from the real statistics of your dataset, with YAML metadata (license, tags, size category, and a `configs:` entry that makes the viewer show `manifest.parquet`):
+**Step 3 — build the dataset card.** The card (`data/README.md`) is generated from the real statistics of your dataset, and carries the YAML front matter the Hub indexes:
+
+| field | value | what it does |
+|---|---|---|
+| `license` | the `--license` id | the license facet, and the badge on the dataset page |
+| `task_categories` | `robotics`, `tabular-regression`, `other` | the task filters; the Hub validates these against its own vocabulary |
+| `size_categories` | derived from the sample count | the size filter |
+| `language`, `annotations_creators`, `source_datasets` | `en`, `machine-generated`, `original` | the remaining standard facets |
+| `tags` | 29 subject keywords (`pnp`, `camera-calibration`, `kannala-brandt`, `magsac`, ...) | free-text search on the Hub and in web search results |
+| `pretty_name` | the dataset's full title | the page heading and the search result title |
+| `configs` | `default` (three splits) and `manifest` (one table) | what the dataset viewer opens |
+| `viewer` | `true` | keeps the viewer enabled |
+
+The command also writes `manifest_train.parquet`, `manifest_val.parquet` and `manifest_test.parquet` — the rows of `manifest.parquet` partitioned on `split` — because the `configs:` block declares them as the dataset's splits, which is what makes the viewer show a split selector and the page report per-split row counts:
 
 ```bash
 python scripts/build_dataset_card.py --data data --repo-id Ezharjan/PnPCorrespondences --license cc-by-4.0
@@ -746,9 +763,9 @@ python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorres
 python scripts/upload_to_huggingface.py --data data --repo-id Ezharjan/PnPCorrespondences --private
 ```
 
-The script creates the repository if needed, private unless `--public` is given, and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits: keep individual files below 50 GB (the `full` tier's shards are 252–387 MB with `max_scenes_per_file: 20`) and folders below 10 000 files; the `full` tier uploads twenty shards and about twenty other files.
+The script creates the repository if needed, private unless `--public` is given, and uploads with `upload_large_folder`, which is resumable, multi-threaded and meant for multi-GB folders: if the connection drops, run the same command again and it continues. A small `.cache/huggingface/` directory with upload state appears inside `data/`; it is not uploaded. For small tiers `--simple-upload` uses the single-commit `upload_folder`. Hub limits: keep individual files below 50 GB (the `full` tier's shards are 252–387 MB with `max_scenes_per_file: 20`) and folders below 10 000 files; the `full` tier uploads twenty shards and about twenty-five other files.
 
-**Step 5 — verify.** Open `https://huggingface.co/datasets/Ezharjan/PnPCorrespondences`: the card is rendered, the *Dataset Viewer* shows the manifest table, and *Files* lists the HDF5 shards.
+**Step 5 — verify.** Open `https://huggingface.co/datasets/Ezharjan/PnPCorrespondences`: the card is rendered, the *Dataset Viewer* shows the manifest table with its `train` / `val` / `test` splits, the tags and license appear beside the title, and *Files* lists the HDF5 shards.
 
 **Step 6 — publish.** `--public` sets the repository public, and applies to an existing repository as well as a new one. The script prints the visibility it reads back from the Hub after each run, so the state is never in doubt.
 
@@ -765,6 +782,14 @@ from huggingface_hub import snapshot_download
 root = snapshot_download("Ezharjan/PnPCorrespondences", repo_type="dataset")          # everything
 root = snapshot_download("Ezharjan/PnPCorrespondences", repo_type="dataset",
                          allow_patterns=["manifest.parquet", "hdf5/planar_single_*"])   # a subset
+```
+
+The manifest alone, without the arrays, is one call away through the declared configurations:
+
+```python
+from datasets import load_dataset
+test = load_dataset("Ezharjan/PnPCorrespondences", split="test")                    # one split
+everything = load_dataset("Ezharjan/PnPCorrespondences", "manifest", split="all")   # every row
 ```
 
 then read it exactly as in Section 6.4 with `root` in place of `data`. **Updating** a published dataset is the same upload command again: only changed files are transferred, and every upload is a versioned commit on the Hub.
@@ -800,7 +825,7 @@ All keys with their defaults live in `pnpcorr/config.py` (`DEFAULTS`); YAML file
 
 ## 15. Extending the project
 
-* **A new solver**: write `def solve_x(X, uv, K, **kwargs) -> PoseEstimate` in `pnpcorr/solvers.py` and add a `SolverSpec` to `SOLVERS` (family, minimum points, planar applicability, robust flag). It is picked up by the benchmark, the tables and the figures; give it a colour in `plots.SOLVER_COLORS` (eight slots per panel).
+* **A new solver**: write `def solve_x(X, uv, K, **kwargs) -> PoseEstimate` in `pnpcorr/solvers.py` and add a `SolverSpec` to `SOLVERS` (family, minimum points, planar applicability, robust flag). It is picked up by the benchmark, the tables and the figures; give it a colour in `plots.SOLVER_COLORS` (eight slots per panel). [`examples/09_bring_your_own_solver.py`](examples/09_bring_your_own_solver.py) does exactly this end to end, with a DLT + IRLS estimator, and runs the real benchmark on it.
 * **A new scene family**: add a generator to `_GENERATORS` in `pnpcorr/scenes.py` returning `(points, labels, center, radius, front_axis, params)` in the scene frame, and its name to `SCENE_TYPES` in `pnpcorr/config.py`.
 * **A new noise model**: extend `apply_condition` in `pnpcorr/noise.py` and the condition validation in `config.py`; the validator's condition checks live in `validate.py`.
 * **Learned solvers**: the `split` column and the per-scene organisation are meant for training / validation / test protocols; `SampleReader` yields NumPy arrays that map directly to tensors.

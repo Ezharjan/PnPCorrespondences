@@ -127,8 +127,8 @@ def main() -> None:
                 break
             shapes = "  ".join(f"{k}{tuple(v.shape)}" for k, v in batch.items() if isinstance(v, np.ndarray))
             print(f"batch {i}: {shapes}")
-            print(f"          outlier fraction per item: "
-                  + " ".join(f"{v:.2f}" for v in batch['is_outlier'].mean(axis=1)))
+            fractions = " ".join(f"{v:.2f}" for v in batch["is_outlier"].mean(axis=1))
+            print(f"          outlier fraction per item: {fractions}")
     finally:
         ds.close()
 

@@ -2,6 +2,9 @@
 """
 Write the Hugging Face dataset card (README.md with YAML metadata) into the dataset directory.
 
+Also writes one Parquet manifest per split, which the card's `configs:` block declares so
+the Hub's dataset viewer shows the splits.
+
     python scripts/build_dataset_card.py --data data --repo-id Ezharjan/PnPCorrespondences --license cc-by-4.0
 """
 import argparse
@@ -11,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pnpcorr.hf import build_dataset_card  # noqa: E402
+from pnpcorr.storage import write_split_manifests  # noqa: E402
 
 
 def main() -> None:
@@ -23,6 +27,10 @@ def main() -> None:
     parser.add_argument("--code-url", default="", help="link the generator source in the card (omit if the repository is private)")
     parser.add_argument("--doi", default="", help="DOI of the dataset, once minted on the Hub")
     args = parser.parse_args()
+    # One Parquet manifest per split, which is what the card's `configs:` block
+    # points the Hub's dataset viewer at.
+    for path in write_split_manifests(args.data):
+        print(f"split manifest: {path}")
     card = build_dataset_card(args.data, args.repo_id, args.license, args.pretty_name, args.homepage,
                               code_url=args.code_url, doi=args.doi)
     path = Path(args.data) / "README.md"

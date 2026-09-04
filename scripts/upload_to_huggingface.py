@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pnpcorr.hf import build_dataset_card, upload_dataset  # noqa: E402
+from pnpcorr.storage import write_split_manifests  # noqa: E402
 
 
 def main() -> None:
@@ -39,6 +40,9 @@ def main() -> None:
     if not (data / "manifest.parquet").exists():
         sys.exit(f"{data} does not look like a generated dataset (manifest.parquet missing)")
     if not args.no_card:
+        # The per-split Parquet manifests the card's `configs:` block declares.
+        for path in write_split_manifests(data):
+            print("split manifest:", path)
         with open(data / "README.md", "w", encoding="utf-8") as fh:
             fh.write(build_dataset_card(data, args.repo_id, args.license,
                                         code_url=args.code_url, doi=args.doi))

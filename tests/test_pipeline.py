@@ -139,7 +139,19 @@ def test_dataset_card_front_matter_is_valid_yaml(dataset):
     meta = yaml.safe_load(card.split("---", 2)[1])
     assert meta["license"] == "cc-by-4.0"
     assert meta["pretty_name"].startswith("PnPCorrespondences:")
-    assert meta["configs"][0]["data_files"] == "manifest.parquet"
+    # The keys the Hub indexes: license and task/size/language facets, the free-text
+    # tags, and the `configs:` block the dataset viewer reads.
+    for key in ("language", "annotations_creators", "source_datasets", "task_categories",
+                "size_categories", "tags", "configs"):
+        assert meta[key], key
+    assert meta["viewer"] is True
+    paths = {f["path"] for c in meta["configs"] for f in c["data_files"]}
+    assert "manifest.parquet" in paths
+    for path in paths:
+        assert (dataset / path).exists(), path
+    default = next(c for c in meta["configs"] if c["config_name"] == "default")
+    assert [f["split"] for f in default["data_files"]] == sorted(
+        set(load_manifest(dataset)["split"]), key=["train", "val", "test"].index)
     assert "Aizierjiang Aiersilan" in card
     # The card must stand alone: it cites the Hub dataset and links no source
     # repository unless one is explicitly supplied.
@@ -150,6 +162,23 @@ def test_dataset_card_front_matter_is_valid_yaml(dataset):
     assert "[source](https://example.org/src)" in linked
     assert "doi          = {10.57967/hf/0000000}" in linked
     assert yaml.safe_load(linked.split("---", 2)[1])["license"] == "cc-by-4.0"
+
+
+def test_split_manifests_partition_the_manifest(dataset):
+    """One Parquet file per split holding exactly that split's rows - what the card's
+    `configs:` block hands to the Hub's dataset viewer."""
+    from pnpcorr.storage import split_manifest_name, write_split_manifests
+
+    manifest = load_manifest(dataset)
+    paths = write_split_manifests(dataset)
+    assert paths and all(p.exists() for p in paths)
+    total = 0
+    for split in sorted(set(manifest["split"])):
+        part = pd.read_parquet(dataset / split_manifest_name(split))
+        assert set(part["split"]) == {split}
+        assert len(part) == int((manifest["split"] == split).sum())
+        total += len(part)
+    assert total == len(manifest)
 
 
 def test_exported_json_is_strict(dataset, tmp_path):
@@ -194,7 +223,12 @@ def test_benchmark_and_analysis(dataset, tmp_path):
     df = run_pnp_benchmark(dataset, subset, solvers, ["all", 8], progress=False)
     assert set(df["solver"]) <= set(solvers)
     clean = df[(df["outlier_ratio"] == 0) & df["ok"]]
-    assert (clean["rot_err_deg"] < 1e-4).all()
+    # The observations are noise-free, so a deterministic solver returns the pose to
+    # machine precision. A sampling estimator stops at its own convergence criterion
+    # instead - looser, and dependent on the OpenCV build it comes from - so it is held
+    # to a bound that asserts the pose is right rather than that it is exact.
+    assert (clean[~clean["robust"]]["rot_err_deg"] < 1e-4).all()
+    assert (clean["rot_err_deg"] < 1e-2).all()
     planar_dlt = df[(df["scene_type"] == "planar_single") & (df["solver"] == "dlt_lm")]
     assert (~planar_dlt["ok"]).all() and planar_dlt["failure_reason"].str.contains("coplanar").all()
     summary = summarize_pnp(df, tmp_path / "tables")

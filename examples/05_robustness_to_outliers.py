@@ -19,7 +19,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pnpcorr.benchmark import ransac_threshold  # noqa: E402
+from pnpcorr.benchmark import ransac_threshold, solver_seed  # noqa: E402
 from pnpcorr.cameras import undistort_to_pinhole_pixels  # noqa: E402
 from pnpcorr.metrics import inlier_classification, is_success, pose_metrics  # noqa: E402
 from pnpcorr.solvers import SOLVERS, available_solvers  # noqa: E402
@@ -44,13 +44,15 @@ def main() -> None:
     sweep = manifest[(manifest["noise_sigma"] == args.noise_sigma) & (~manifest["quantize"].astype(bool))
                      & ((manifest["outlier_type"] == args.outlier_type) | (manifest["outlier_ratio"] == 0))]
     ratios = sorted(sweep["outlier_ratio"].unique())
-    if len(ratios) < 2:
-        sys.exit(f"this dataset has only {len(ratios)} outlier ratio(s) at sigma = {args.noise_sigma} "
-                 f"and outlier_type = {args.outlier_type}; the `small` tier or larger is needed")
+    if len(ratios) < 3:
+        sys.exit(f"a breakdown curve needs at least three outlier ratios; this dataset has "
+                 f"{len(ratios)} at sigma = {args.noise_sigma} with outlier_type = {args.outlier_type}. "
+                 f"The sweep is generated for `uniform` outliers, so use --outlier-type uniform on the "
+                 f"`small` tier or larger, which covers six ratios (0, 5, 20, 50, 80, 95 %); `swap` is "
+                 f"generated at 20 % and 50 % only and `mixed` at a single ratio.")
 
     names = [n.strip() for n in args.solvers.split(",")]
     specs = available_solvers(names)
-    rng = np.random.default_rng(args.seed)
     success = {s.name: [] for s in specs}
     rot = {s.name: [] for s in specs}
     prf = {s.name: [] for s in specs}
@@ -74,8 +76,12 @@ def main() -> None:
                         continue
                     acc = per_solver[spec.name]
                     acc["n"] += 1
+                    # The seed is a function of the sample and the solver's name, never of
+                    # its position in --solvers, so restricting the list reproduces the
+                    # numbers of a full run exactly - the same rule the benchmark uses.
+                    key = [args.seed, int(row["scene_id"]), int(row["camera_id"]), int(row["condition_id"])]
                     est = spec.fn(X, uv, intr.K, threshold=thr, max_iters=args.max_iters,
-                                  confidence=0.99, seed=int(rng.integers(2 ** 31 - 1)))
+                                  confidence=0.99, seed=solver_seed(key, spec.name, "all"))
                     if not est.ok:
                         continue
                     pm = pose_metrics(est.R, est.t, sample.R, sample.t, depth_scale)
@@ -99,11 +105,11 @@ def main() -> None:
     for name in success:
         print(f"  {name:20s}" + "  ".join(f"{v:6.0f}" for v in success[name])
               + ("   (not robust)" if not SOLVERS[name].robust else ""))
-    print(f"\nmedian rotation error [deg]")
+    print("\nmedian rotation error [deg]")
     for name in rot:
         print(f"  {name:20s}" + "  ".join(f"{v:6.2g}" for v in rot[name]))
     if any(np.isfinite(p) for name in prf for p, _ in prf[name]):
-        print(f"\ninlier mask, median precision / recall")
+        print("\ninlier mask, median precision / recall")
         for name in prf:
             if not np.isfinite(prf[name][0][0]):
                 continue

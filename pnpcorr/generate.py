@@ -172,8 +172,10 @@ def generate_dataset(cfg: Dict[str, Any], out_dir, workers: int = 1, progress: b
     stats["workers"] = int(workers or 1)
     dump_json(stats, writer.meta_dir / "dataset_stats.json")
     if log:
+        empty = int(stats.get("num_scenes_empty", 0))
         log(f"scenes: {stats['num_scenes']}  cameras: {stats['num_cameras']}  "
             f"samples: {stats['num_samples']}  correspondences: {stats['num_correspondences']:,}  "
             f"skipped cameras: {stats['num_cameras_skipped']}  "
-            f"size: {stats['hdf5_bytes'] / 1e9:.3f} GB  time: {stats['generation_seconds']:.1f}s")
+            + (f"scenes with no usable view: {empty}  " if empty else "")
+            + f"size: {stats['hdf5_bytes'] / 1e9:.3f} GB  time: {stats['generation_seconds']:.1f}s")
     return stats

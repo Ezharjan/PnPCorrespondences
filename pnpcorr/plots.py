@@ -67,8 +67,11 @@ def _style() -> None:
         "axes.edgecolor": AXIS, "axes.linewidth": 0.8, "axes.grid": True, "grid.color": GRID,
         "grid.linewidth": 0.8, "grid.linestyle": "-", "axes.axisbelow": True,
         "xtick.color": MUTED, "ytick.color": MUTED, "axes.labelcolor": INK_2, "text.color": INK,
-        "axes.titlecolor": INK, "axes.titleweight": "medium", "axes.titlesize": 11, "axes.labelsize": 10,
+        "axes.titlecolor": INK, "axes.titlesize": 11, "axes.labelsize": 10,
         "xtick.labelsize": 9, "ytick.labelsize": 9, "legend.fontsize": 8.5, "legend.frameon": False,
+        # DejaVu Sans, the font matplotlib always ships, has no medium weight, so asking
+        # for one prints a findfont warning for every titled axes and falls back to
+        # normal anyway.  The titles are set apart by colour and size instead.
         "font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans", "Arial", "Helvetica"],
         "axes.spines.top": False, "axes.spines.right": False, "lines.linewidth": 1.8, "lines.markersize": 5.5,
         "figure.dpi": 110, "savefig.dpi": 160, "savefig.bbox": "tight",

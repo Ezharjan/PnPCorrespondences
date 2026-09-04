@@ -342,13 +342,16 @@ def validate_dataset(data_dir: "str | Path", max_cameras: Optional[int] = None, 
                     rep.check("scene", is_planar(pts) and (labels == 0).all(), f"{label}: planar_single is not planar")
                 elif st in ("planar_multi", "mixed"):
                     n_planes = int(sattrs["num_planes"])
-                    # `is_planar` is vacuously true for fewer than four points, so the
-                    # per-plane check is only meaningful once the plane is known to be
-                    # populated; without the size test an all -1 label array would pass.
                     for k in range(n_planes):
-                        plane = pts[labels == k]
-                        rep.check("scene", len(plane) >= 4 and is_planar(plane),
-                                  f"{label}: plane {k} of {st} has {len(plane)} points or is not planar")
+                        rep.check("scene", is_planar(pts[labels == k]),
+                                  f"{label}: plane {k} of {st} is not planar")
+                    # `is_planar` is vacuously true for fewer than four points, so an
+                    # empty or missing plane would slip past the check above; requiring
+                    # the label set to be exactly the expected one closes that.  A
+                    # sparsely populated plane is legitimate - `_gen_planar_multi`
+                    # divides the scene's points between two to four planes, so a small
+                    # `scenes.num_points` leaves few on each - which is why the check is
+                    # on the set of labels rather than on how many points carry each.
                     allowed = set(range(n_planes)) | ({-1} if st == "mixed" else set())
                     rep.check("scene", set(np.unique(labels).tolist()) == allowed,
                               f"{label}: {st} point_labels are {sorted(set(np.unique(labels).tolist()))}, "
@@ -399,7 +402,11 @@ def validate_dataset(data_dir: "str | Path", max_cameras: Optional[int] = None, 
             rec = generate_scene_record(spec, cfg)
             rows = manifest[manifest["scene_id"] == spec["scene_id"]]
             if rows.empty:
-                rep.check("reproducibility", False, f"scene {spec['scene_id']} missing from manifest")
+                # A scene whose every pose failed the visibility test is counted, not
+                # written, so its absence is correct exactly when it regenerates empty.
+                rep.check("reproducibility", not rec["cameras"],
+                          f"scene {spec['scene_id']} is missing from the manifest but regenerates "
+                          f"with {len(rec['cameras'])} cameras")
                 continue
             with h5py.File(data_dir / rows.iloc[0]["file"], "r") as f:
                 sg = f[f"scene_{spec['scene_id']:05d}"]

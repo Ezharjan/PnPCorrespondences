@@ -218,8 +218,6 @@ def test_yaml_restrictions_are_not_merged_back(tmp_path):
 def test_config_used_yaml_round_trips(tmp_path):
     """`metadata/config_used.yaml` is the reproducibility record, so re-loading it
     must give back exactly the configuration that produced the dataset."""
-    from pnpcorr.config import config_to_yaml
-
     cfg = _cfg(scenes_per_type=1, intrinsics=1, poses=1)
     cfg["cameras"]["model_probs"] = {"brown_conrady": 1.0}
     cfg["cameras"]["fov_class_probs"] = {"brown_conrady": {"normal": 1.0}}
@@ -248,3 +246,40 @@ def test_num_outliers_is_the_exact_floor():
         exact = Fraction(str(ratio))
         for m in range(1, 3000):
             assert num_outliers(m, ratio) == (m * exact).__floor__(), (m, ratio)
+
+
+def test_validation_accepts_sparsely_populated_planes(tmp_path):
+    """A `planar_multi` scene divides its points between two to four planes, so a small
+    `scenes.num_points` leaves only a handful on each; that is valid data and must pass."""
+    from pnpcorr.validate import validate_dataset
+
+    cfg = load_config()
+    cfg["scenes"]["counts"] = {"planar_multi": 4, "mixed": 4}
+    cfg["scenes"]["num_points"] = [8, 12]
+    cfg["cameras"]["num_intrinsics_per_scene"] = 1
+    cfg["cameras"]["num_poses_per_intrinsics"] = 1
+    cfg["cameras"]["min_visible_points"] = 4
+    cfg["conditions"]["items"] = [
+        {"noise_sigma": 0.5, "quantize": False, "outlier_ratio": 0.0, "outlier_type": "uniform"}]
+    generate_dataset(cfg, tmp_path, workers=1, progress=False, log=None)
+    report = validate_dataset(tmp_path, regenerate=1, progress=False, log=None)
+    assert report["passed"], report["failures"]
+
+
+def test_validation_still_catches_wrong_plane_labels(tmp_path):
+    """The label set is what pins every plane down once the size test is gone."""
+    import h5py
+
+    from pnpcorr.validate import validate_dataset
+
+    cfg = _cfg(scenes_per_type=1, intrinsics=1, poses=1)
+    cfg["scenes"]["counts"] = {"planar_multi": 2}
+    cfg["scenes"]["num_points"] = [200, 300]
+    generate_dataset(cfg, tmp_path, workers=1, progress=False, log=None)
+    shard = sorted((tmp_path / "hdf5").glob("*.h5"))[0]
+    with h5py.File(shard, "r+") as fh:
+        scene = fh[sorted(k for k in fh if k.startswith("scene_"))[0]]
+        scene["point_labels"][...] = np.full(scene["point_labels"].shape, -1, dtype=np.int16)
+    report = validate_dataset(tmp_path, regenerate=0, progress=False, log=None)
+    assert not report["passed"]
+    assert any("point_labels" in f for f in report["failures"]), report["failures"]

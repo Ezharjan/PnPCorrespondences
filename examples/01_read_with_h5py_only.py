@@ -13,6 +13,7 @@ projections to floating-point accuracy.
     python examples/01_read_with_h5py_only.py --data data --num-samples 20
 """
 import argparse
+import math
 
 import h5py
 import numpy as np
@@ -54,8 +55,8 @@ def main() -> None:
     manifest = pd.read_parquet(f"{args.data}/manifest.parquet")
     rows = manifest.sample(n=min(args.num_samples, len(manifest)), random_state=args.seed)
     print(f"{len(manifest):,} samples in the manifest; checking {len(rows)} of them\n")
-    print(f"{'camera model':16s} {'M':>6s} {'sigma':>6s} {'outliers':>9s} "
-          f"{'max |proj - stored| [px]':>26s} {'inlier RMS [px]':>16s}")
+    print(f"{'camera model':16s} {'M':>6s} {'sigma':>6s} {'quant':>6s} {'outliers':>9s} "
+          f"{'max |proj - stored| [px]':>26s} {'inlier RMS':>11s} {'expected':>9s}")
 
     worst = 0.0
     for _, row in rows.iterrows():
@@ -77,11 +78,13 @@ def main() -> None:
         worst = max(worst, err)
         inliers = ~outliers
         rms = float(np.sqrt(np.mean(np.sum((uv[inliers] - uv_clean[inliers]) ** 2, axis=1) / 2.0)))
-        print(f"{model:16s} {len(idx):6d} {row.noise_sigma:6.2f} {int(outliers.sum()):9d} "
-              f"{err:26.2e} {rms:16.4f}")
+        # Rounding adds an independent U(-1/2, 1/2), so the two variances add.
+        expected = math.sqrt(float(row.noise_sigma) ** 2 + (1.0 / 12.0 if bool(row.quantize) else 0.0))
+        print(f"{model:16s} {len(idx):6d} {row.noise_sigma:6.2f} {'yes' if row.quantize else 'no':>6s} "
+              f"{int(outliers.sum()):9d} {err:26.2e} {rms:11.4f} {expected:9.4f}")
 
     print(f"\nlargest deviation from the stored ground truth: {worst:.2e} px")
-    print("the per-coordinate inlier RMS is the condition's sigma, plus 1/sqrt(12) when quantized")
+    print("the per-coordinate inlier RMS is the condition's sigma, or sqrt(sigma^2 + 1/12) when quantized")
 
 
 if __name__ == "__main__":

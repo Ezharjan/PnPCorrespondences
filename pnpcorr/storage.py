@@ -41,7 +41,7 @@ import pandas as pd
 
 from ._version import FORMAT_VERSION, __version__
 from .cameras import Intrinsics
-from .config import config_to_json, config_to_yaml
+from .config import SPLIT_ORDER, config_to_json, config_to_yaml
 
 MANIFEST_COLUMNS = [
     "sample_id", "file", "h5_path", "scene_id", "scene_type", "split", "num_points_3d", "scene_layout",
@@ -159,7 +159,7 @@ class DatasetWriter:
         self._manifest_writer.writeheader()
         self.stats: Dict[str, Any] = {
             "num_scenes": 0, "num_cameras": 0, "num_samples": 0, "num_cameras_skipped": 0,
-            "num_correspondences": 0, "files": [],
+            "num_scenes_empty": 0, "num_correspondences": 0, "files": [],
         }
         self.created_utc = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
 
@@ -201,6 +201,14 @@ class DatasetWriter:
 
     # -- writing -------------------------------------------------------------
     def write_scene(self, rec: Dict[str, Any]) -> None:
+        self.stats["num_cameras_skipped"] += int(rec.get("num_cameras_skipped", 0))
+        if not rec["cameras"]:
+            # Every pose of this scene failed the visibility test.  Writing it would
+            # put 3D points in the file that no sample refers to and would leave
+            # `num_scenes` in dataset_stats.json disagreeing with the manifest, which
+            # indexes samples.  The scene is counted instead of stored.
+            self.stats["num_scenes_empty"] += 1
+            return
         scene_type = rec["scene_type"]
         fh = self._file_for(scene_type)
         file_name = self._current_file_name[scene_type]
@@ -288,7 +296,6 @@ class DatasetWriter:
                 self.stats["num_correspondences"] += int(len(idx))
             self.stats["num_cameras"] += 1
         self.stats["num_scenes"] += 1
-        self.stats["num_cameras_skipped"] += int(rec.get("num_cameras_skipped", 0))
 
     # -- finalization --------------------------------------------------------
     def close(self) -> Dict[str, Any]:
@@ -306,6 +313,7 @@ class DatasetWriter:
             if col in manifest.columns:
                 manifest[col] = manifest[col].astype(dtype)
         manifest.to_parquet(self.out_dir / "manifest.parquet", index=False)
+        write_split_manifests(self.out_dir, manifest)
         stats = compute_dataset_stats(manifest)
         stats.update({k: v for k, v in self.stats.items() if k != "files"})
         stats["files"] = sorted(self.stats["files"])
@@ -367,6 +375,34 @@ def load_manifest(data_dir: "str | Path") -> pd.DataFrame:
     if parquet.exists():
         return pd.read_parquet(parquet)
     return pd.read_csv(data_dir / "manifest.csv", float_precision="round_trip")
+
+
+def split_manifest_name(split: str) -> str:
+    return f"manifest_{split}.parquet"
+
+
+def write_split_manifests(data_dir: "str | Path", manifest: Optional[pd.DataFrame] = None,
+                          overwrite: bool = True) -> List[Path]:
+    """
+    Partition the manifest on ``split`` and write one Parquet file per split.
+
+    ``manifest.parquet`` remains the complete table; these files hold exactly its
+    rows, grouped, so a reader can pull one split without downloading the rest and
+    a catalogue that indexes Parquet files sees the splits the dataset declares.
+    Returns the paths written, in split order.
+    """
+    data_dir = Path(data_dir)
+    if manifest is None:
+        manifest = load_manifest(data_dir)
+    names = [s for s in SPLIT_ORDER if s in set(manifest["split"])]
+    names += sorted(set(manifest["split"]) - set(SPLIT_ORDER))
+    paths: List[Path] = []
+    for split in names:
+        path = data_dir / split_manifest_name(str(split))
+        if overwrite or not path.exists():
+            manifest[manifest["split"] == split].reset_index(drop=True).to_parquet(path, index=False)
+        paths.append(path)
+    return paths
 
 
 def load_stats(data_dir: "str | Path") -> Dict[str, Any]:

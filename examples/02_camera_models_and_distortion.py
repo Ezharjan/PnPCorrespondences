@@ -99,13 +99,18 @@ def main() -> None:
     print("'vs OpenCV' compares only the points a dataset would store - in front of the camera,\n"
           "inside the invertible domain and on the sensor - which is where the model is defined.")
 
-    # Where the domain actually bites: a strongly distorted Brown-Conrady camera.
-    strong = max((c for c in per_model[BROWN_CONRADY]), key=lambda c: -c.valid_radius)
+    # Where the domain actually bites.  The table below is indexed by r / r_corner, so
+    # the interesting camera is the one whose injective radius is smallest *relative* to
+    # its own corner - not the one with the smallest absolute radius, which is just a
+    # telephoto whose corner radius is small too.
+    strong = min(per_model[BROWN_CONRADY],
+                 key=lambda c: c.valid_radius / corner_radius(c.K, c.width, c.height))
     r_c = corner_radius(strong.K, strong.width, strong.height)
     radii = np.linspace(0.2 * r_c, 2.0 * r_c, 9)
     inside = in_valid_domain(radii, np.zeros_like(radii), strong)
-    print(f"\nmost restricted Brown-Conrady camera of the sample: valid_radius = {strong.valid_radius:.4f}, "
-          f"corner radius = {r_c:.4f}")
+    print(f"\ntightest Brown-Conrady domain of the sample, relative to its own corner: "
+          f"valid_radius = {strong.valid_radius:.4f}, corner radius = {r_c:.4f}, "
+          f"ratio = {strong.valid_radius / r_c:.3f}")
     print("  r / r_corner :", "  ".join(f"{r / r_c:5.2f}" for r in radii))
     print("  invertible   :", "  ".join(f"{'yes' if b else ' no':>5s}" for b in inside))
 

@@ -10,7 +10,8 @@ it: OpenCV's `calibrateCamera` / `fisheye.calibrate`, and the from-scratch spars
 bundle adjustment in `pnpcorr.solvers`.
 
     python examples/06_multiview_calibration.py --data data
-    python examples/06_multiview_calibration.py --data data --camera-model kannala_brandt --num-rigs 3
+    python examples/06_multiview_calibration.py --data data --camera-model kannala_brandt --num-cameras 3
+    python examples/06_multiview_calibration.py --data data --sigmas 0.0,0.5,2.0
 """
 import argparse
 import sys
@@ -29,8 +30,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", default="data", help="dataset directory")
     parser.add_argument("--camera-model", default=None, choices=["pinhole", "brown_conrady", "kannala_brandt"])
-    parser.add_argument("--num-rigs", type=int, default=2, help="calibration rigs to run")
+    parser.add_argument("--num-cameras", type=int, default=2, help="distinct cameras to calibrate")
     parser.add_argument("--min-views", type=int, default=3)
+    parser.add_argument("--sigmas", default=None,
+                        help="comma-separated noise levels to calibrate at (default: 0 and the largest available)")
     args = parser.parse_args()
 
     manifest = load_manifest(args.data)
@@ -40,24 +43,43 @@ def main() -> None:
                     & (manifest["scene_type"] != "planar_single")]
     if args.camera_model:
         pool = pool[pool["camera_model"] == args.camera_model]
+    if pool.empty:
+        sys.exit(f"no outlier-free, non-quantized, non-planar view left after filtering"
+                 f"{' for camera_model = ' + args.camera_model if args.camera_model else ''}; "
+                 f"this dataset has {sorted(manifest['camera_model'].unique())}")
+    # Which noise levels to calibrate at.  The default pairs the exact case, where both
+    # estimators should be exact, with the noisiest available, where the conditioning of
+    # the problem - and the difference between the two - actually shows.
+    available = sorted(float(v) for v in pool["noise_sigma"].unique())
+    if args.sigmas:
+        try:
+            sigmas = [float(v) for v in args.sigmas.split(",") if v.strip()]
+        except ValueError:
+            sys.exit("--sigmas must be a comma-separated list of numbers, e.g. 0.0,0.5,2.0")
+        missing = [v for v in sigmas if v not in available]
+        if not sigmas or missing:
+            sys.exit(f"noise sigma {missing or 'list is empty'}; this dataset has {available}")
+    else:
+        sigmas = sorted({available[0], available[-1]})
+    pool = pool[pool["noise_sigma"].isin(sigmas)]
+
     rigs = [g for _, g in pool.groupby(["file", "scene_id", "intrinsics_id", "condition_id"], sort=True)
             if len(g) >= args.min_views]
     if not rigs:
         sys.exit(f"no rig with at least {args.min_views} views; increase cameras.num_poses_per_intrinsics")
-    # One rig per distinct camera, so several runs show several cameras rather than
-    # the same one under different noise conditions.
-    seen, distinct = set(), []
+    # Group the rigs by camera, so each block below is one physical camera seen at every
+    # requested noise level rather than a different camera each time.
+    by_camera: "dict[tuple, list]" = {}
     for rig in rigs:
         key = (rig.iloc[0]["file"], int(rig.iloc[0]["scene_id"]), int(rig.iloc[0]["intrinsics_id"]))
-        if key not in seen:
-            seen.add(key)
-            distinct.append(rig)
-    rigs = distinct
+        by_camera.setdefault(key, []).append(rig)
+    cameras = [sorted(v, key=lambda g: float(g.iloc[0]["noise_sigma"])) for v in by_camera.values()]
 
-    print(f"{len(rigs)} distinct cameras with at least {args.min_views} views; "
-          f"running {min(args.num_rigs, len(rigs))}\n")
+    print(f"{len(cameras)} distinct cameras with at least {args.min_views} views; "
+          f"calibrating {min(args.num_cameras, len(cameras))} of them at sigma = "
+          f"{', '.join(str(v) for v in sigmas)} px\n")
     with SampleReader(args.data) as reader:
-        for rig in rigs[:args.num_rigs]:
+        for rig in [g for cam_rigs in cameras[:args.num_cameras] for g in cam_rigs]:
             samples = [reader.read(row) for _, row in rig.iterrows()]
             first = samples[0]
             intr = first.intrinsics
@@ -110,8 +132,15 @@ def main() -> None:
 
     print("`dist RMSE` is against the exact coefficients that produced the observations, which is")
     print("only possible because there is no image formation step between them and the data.")
-    print("Narrow fields of view are the ill-conditioned case: the principal point becomes nearly")
-    print("unobservable there, and the cx / cy columns show it while the reprojection rms stays small.")
+    print("At sigma = 0 the from-scratch bundle adjustment is exact on every rig, which is the check")
+    print("that the pipeline and the ground truth agree.  OpenCV lands within a hundredth of a pixel")
+    print("on pinhole and Brown-Conrady rigs, but `cv2.fisheye.calibrate` initialises its extrinsics")
+    print("assuming a planar target, so it can fail outright on a non-planar Kannala-Brandt rig even")
+    print("with no noise at all - the case README Section 9.6 quantifies as 43 % success against 86 %.")
+    print("Under noise the conditioning of the problem shows: a narrow field of view makes the")
+    print("principal point nearly unobservable, so the cx / cy columns grow by orders of magnitude")
+    print("while the reprojection rms stays at the noise level - a small residual is not evidence")
+    print("of a well-determined camera.")
 
 
 if __name__ == "__main__":
