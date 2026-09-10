@@ -587,10 +587,10 @@ Each row also carries the sample's identifying and experimental factors — 24 o
 ### 9.4 Running
 
 ```bash
-python scripts/run_benchmark.py --data data --out results --task all --max-samples 3000 --sweep-samples 600 --max-rigs 100
+python scripts/run_benchmark.py --data data --out results --task all --max-samples 3000 --sweep-samples 600 --max-rigs 120
 ```
 
-* `--max-samples` draws a deterministic *stratified* subset: every (scene type, camera model, FOV class, condition) cell receives about the same number of samples, so each factor level is equally represented whatever the dataset size. `--sweep-samples` and `--max-rigs` do the same for the sweep and the multi-view task.
+* `--max-samples` draws a deterministic *stratified* subset: every (scene type, camera model, FOV class, condition) cell receives about the same number of samples, so each factor level is equally represented whatever the dataset size. `--sweep-samples` stratifies the sweep by (scene type, camera model, noise sigma) instead, since its factor of interest is the subset size rather than the condition; `--max-rigs` draws multi-view rigs uniformly at random from the eligible groups, of which there are too few for a four-way stratification to fill.
 * `--task pnp|sweep|calibration|multiview` runs one task; `--solvers sqpnp,epnp,cv_usac_magsac` restricts the solver set; `--split test` restricts to a split; `--query "camera_model == 'kannala_brandt'"` applies any pandas query to the manifest.
 * `--num-points 4,6,8,12,20,50,100,500` sets the subset sizes of the sweep; `--max-iters`, `--confidence`, `--threshold` control the robust estimators; `--seed` fixes the subset selection and the RANSAC seeds. The point subsets are drawn from a stream that depends only on the sample, never on how many solvers are being evaluated, so a `--solvers`-restricted run is directly comparable with a full one.
 * Runtime, measured on two cores: 0.47 s per sample for the PnP task on ≈ 1 400-point views (the robust solvers dominate; at 95 % outliers OpenCV's RANSAC runs its full iteration budget), 0.52 s per sample for the eight-size sweep, 24 ms per single-view calibration, and per rig 0.13 s for OpenCV against 2.6 s for the from-scratch bundle adjustment. Thirteen of the fifteen solvers appear in the all-points tasks; `p3p` and `ap3p` are defined at exactly four correspondences and appear in the sweep. The `small`-tier budget of Section 9.6 (`--max-samples 600 --sweep-samples 120 --max-rigs 30`) took 7.5 minutes, and the default budget (`--max-samples 1500 --sweep-samples 400 --max-rigs 60`) takes roughly 20.
@@ -684,7 +684,7 @@ Every figure name above links to the committed version, so the complete set can 
 ## 11. The one-command pipeline
 
 ```bash
-python scripts/run_pipeline.py --config configs/full.yaml --out-root . --workers 6 --max-samples 3000 --sweep-samples 600 --max-rigs 100 --repo-id Ezharjan/PnPCorrespondences
+python scripts/run_pipeline.py --config configs/full.yaml --out-root . --workers 6 --max-samples 3000 --sweep-samples 600 --max-rigs 120 --repo-id Ezharjan/PnPCorrespondences
 ```
 
 runs, in order: generate → validate → export examples → benchmark (all tasks) → analyse → figures → benchmark summary → dataset card, producing `data/`, `results/` and `docs/` under `--out-root`. `--figures DIR` and `--summary-doc PATH` override where the two documentation artefacts land, `--no-summary-doc` skips the summary copy, `--skip-generate` reuses an existing `data/`, `--skip-benchmark` only draws the dataset figures, `--validate-cameras N` validates a subset for very large tiers, and `--no-progress` silences the progress bars of every stage, which is what you want when the output goes to a log file. Every stage is an ordinary script call that is printed before it runs, so any stage can be re-run individually.
