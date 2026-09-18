@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------- generated data
+# Datasets, benchmark results and scratch runs are reproducible artefacts; they
+# are NOT caches and are never deleted by scripts/clean_caches.py - remove them
+# by hand when you want to regenerate them.
+#
+# Every pattern here is anchored to the repository root with a leading "/".
+# An unanchored pattern such as "figures/" would match at ANY depth and would
+# therefore also swallow docs/figures/, whose images the README embeds.
+/data/
+/data_*/
+/results/
+/runs/
+/figures/
+*.h5
+*.hdf5
+
+# docs/figures/ holds the figures the README displays. It is version-controlled,
+# which is why the patterns above are anchored to the repository root.
+
+# ---------------------------------------------------------------------- caches
+# Everything below is removed by: python scripts/clean_caches.py
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+build/
+dist/
+.cache/
+
+# ------------------------------------------------------------ environments / OS
+.venv/
+venv/
+env/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
